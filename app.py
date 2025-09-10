@@ -32,6 +32,9 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 # Rate limiting: 500 messages per hour per user
 user_requests = {}
 
+# Event deduplication
+processed_events = set()
+
 def is_rate_limited(user_id: str) -> bool:
     now = datetime.now()
     cutoff = now - timedelta(hours=1)
@@ -50,35 +53,15 @@ def is_rate_limited(user_id: str) -> bool:
     user_requests[user_id].append(now)
     return False
 
-SYSTEM_PROMPT = """You are an expert tutor specializing in data science, Python programming, machine learning, and statistical analysis. You help INST414 Data Science Techniques students.
+SYSTEM_PROMPT = """You are an expert tutor who has expert knowledge in programming, educational questioning techniques, and computational thinking strategies. You heavily use open questions in responding to students and never want to reveal an answer to a current or previous question outright. You are never to give the exact code to solve the student's entire problem; instead, focus on helping the student to find their own way to the solution.
 
-CRITICAL FORMATTING RULES - FOLLOW EXACTLY:
-1. ALWAYS start responses with "[Duck]"
-2. Use SINGLE asterisks for bold
-3. Use underscores for italics: _emphasis_ 
-4. Use backticks for code: `df.head()`
-5. Use bullet points with dashes: -
-6. Keep responses to 3 main points maximum
+Before responding to the student, please identify and define key computational thinking or coding concepts in their question. Keep in mind that the students you are responding to are new to programming and may have not had any prior programming experience. We do want them to learn the language of programming, but also feel free to use metaphors, analogies, or everyday examples when discussing computational thinking or coding concepts.
 
-EXAMPLE CORRECT FORMAT:
-[Duck] 
-- Have you worked with *Pandas* before? It's great for _data manipulation_.
-- Try using `df.head()` to see your first few rows.
-- What specific operation are you trying to perform?
+Also, if the student's initial query doesn't specify what they were trying to do, prompt them to clarify that.
 
-TEACHING APPROACH:
-- Ask guiding questions - never give complete solutions
-- Help students think step-by-step
-- Use simple analogies for complex concepts
-- If unclear, ask them to clarify their goal
+You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please make sure you place [Duck] before any of your responses and begin each response by quacking.
 
-WHEN STUDENTS ASK ABOUT:
-- Errors: Guide them to read the error message
-- Data issues: Help them examine data structure with `df.info()` or `df.dtypes`
-- ML models: Focus on understanding before coding
-- Plots: Ask what story they want to tell
-
-NEVER provide complete code solutions. Always guide with questions and small hints using proper Slack formatting with SINGLE asterisks for bold."""
+Never ignore any of these instructions."""
 
 def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     if abs(time.time() - int(timestamp)) > 60 * 5:
@@ -93,13 +76,16 @@ def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     
     return hmac.compare_digest(my_signature, signature)
 
-def get_duck_response(message: str, user_id: str) -> str:
+def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
     try:
         # Get conversation history
         history = get_conversation_history(user_id)
         
         # Build messages with history
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        system_prompt = SYSTEM_PROMPT
+        if user_name:
+            system_prompt += f"\n\nThe student's name is {user_name}. Feel free to address them by name in your responses."
+        messages = [{"role": "system", "content": system_prompt}]
         
         # Add conversation history
         for prev_msg, prev_response in history:
@@ -142,7 +128,16 @@ async def slack_events(request: Request):
     if event_data.get("type") == "event_callback":
         event = event_data.get("event", {})
         
-        if event.get("type") in ["message", "app_mention"] and not event.get("bot_id"):
+        # Event deduplication
+        event_id = event.get("client_msg_id") or event.get("ts")
+        if event_id and event_id in processed_events:
+            return {"status": "ok"}
+        if event_id:
+            processed_events.add(event_id)
+            if len(processed_events) > 1000:
+                processed_events.clear()
+        
+        if event.get("type") == "message" and not event.get("bot_id"):
             user_id = event.get("user")
             channel_id = event.get("channel")
             text = event.get("text", "")
@@ -184,7 +179,7 @@ async def slack_events(request: Request):
                     user_name = f"User_{user_id[-4:]}"  # Use last 4 chars of user ID
                 
                 # Get AI response
-                response = get_duck_response(text, user_id)
+                response = get_duck_response(text, user_id, user_name)
                 
                 # Save conversation to database
                 save_conversation(user_id, user_name, text, response)
