@@ -22,7 +22,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./conversations.db")
 
 # Handle Railway's Postgres URL format
 if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
