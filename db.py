@@ -20,8 +20,11 @@ class Conversation(Base):
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./conversations.db")
 
-# Handle Railway's Postgres URL format
-if DATABASE_URL.startswith("postgresql://"):
+# Handle Railway's Postgres URL format - force psycopg3 driver
+if DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://"):
+    # Extract the connection parts and rebuild with psycopg driver
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 
 engine = create_engine(DATABASE_URL)
