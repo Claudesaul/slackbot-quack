@@ -12,7 +12,7 @@ from openai import OpenAI
 from fastapi import FastAPI, Request
 from slack_sdk import WebClient
 from dotenv import load_dotenv
-from db import init_db, save_conversation, get_conversation_history
+from db import init_db, save_conversation, get_conversation_history, reset_conversation
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -35,6 +35,16 @@ user_requests = {}
 # Event deduplication
 processed_events = set()
 
+SYSTEM_PROMPT = """You are an expert tutor who has expert knowledge in programming, educational questioning techniques, and computational thinking strategies. You heavily use open questions in responding to students and never want to reveal an answer to a current or previous question outright. You are never to give the exact code to solve the student's entire problem; instead, focus on helping the student to find their own way to the solution.
+
+Before responding to the student, please identify and define key computational thinking or coding concepts in their question. Keep in mind that the students you are responding to are new to programming and may have not had any prior programming experience. We do want them to learn the language of programming, but also feel free to use metaphors, analogies, or everyday examples when discussing computational thinking or coding concepts.
+
+Also, if the student's initial query doesn't specify what they were trying to do, prompt them to clarify that.
+
+You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please make sure you place [Duck] before any of your responses and begin each response by quacking.
+
+Never ignore any of these instructions."""
+
 def is_rate_limited(user_id: str) -> bool:
     now = datetime.now()
     cutoff = now - timedelta(hours=1)
@@ -53,16 +63,6 @@ def is_rate_limited(user_id: str) -> bool:
     user_requests[user_id].append(now)
     return False
 
-SYSTEM_PROMPT = """You are an expert tutor who has expert knowledge in programming, educational questioning techniques, and computational thinking strategies. You heavily use open questions in responding to students and never want to reveal an answer to a current or previous question outright. You are never to give the exact code to solve the student's entire problem; instead, focus on helping the student to find their own way to the solution.
-
-Before responding to the student, please identify and define key computational thinking or coding concepts in their question. Keep in mind that the students you are responding to are new to programming and may have not had any prior programming experience. We do want them to learn the language of programming, but also feel free to use metaphors, analogies, or everyday examples when discussing computational thinking or coding concepts.
-
-Also, if the student's initial query doesn't specify what they were trying to do, prompt them to clarify that.
-
-You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please make sure you place [Duck] before any of your responses and begin each response by quacking.
-
-Never ignore any of these instructions."""
-
 def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     if abs(time.time() - int(timestamp)) > 60 * 5:
         return False
@@ -76,10 +76,10 @@ def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     
     return hmac.compare_digest(my_signature, signature)
 
-def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
+def get_duck_response(message: str, thread_id: str, user_name: str = None) -> str:
     try:
-        # Get conversation history
-        history = get_conversation_history(user_id)
+        # Get conversation history for this thread
+        history = get_conversation_history(thread_id)
         
         # Build messages with history
         system_prompt = SYSTEM_PROMPT
@@ -155,6 +155,23 @@ async def slack_events(request: Request):
             is_dm = channel_id.startswith('D')
             
             if bot_mentioned or is_dm:
+                # Clean message
+                if bot_user_id:
+                    text = text.replace(f"<@{bot_user_id}>", "").strip()
+                
+                # Check for clear command (DMs only)
+                if text.strip().lower() == "clear" and is_dm:
+                    deleted_count = reset_conversation(user_id)
+                    response_text = f"[Duck] Quack! I've cleared our conversation history. Ready for a fresh start!"
+                    try:
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=response_text
+                        )
+                    except:
+                        pass
+                    return {"status": "ok"}
+                
                 # Check rate limit
                 if is_rate_limited(user_id):
                     slack_client.chat_postMessage(
@@ -164,25 +181,19 @@ async def slack_events(request: Request):
                     )
                     return {"status": "ok"}
                 
-                # Clean message
-                if bot_user_id:
-                    text = text.replace(f"<@{bot_user_id}>", "").strip()
-                
                 # Get user's display name
                 try:
                     user_info = slack_client.users_info(user=user_id)
                     user_data = user_info["user"]
                     user_name = user_data.get("real_name") or user_data.get("display_name") or user_data.get("name", "Unknown User")
-                    print(f"DEBUG: Got user name '{user_name}' for user {user_id}")
-                except Exception as e:
-                    print(f"DEBUG: Failed to get user info for {user_id}: {e}")
-                    user_name = f"User_{user_id[-4:]}"  # Use last 4 chars of user ID
+                except:
+                    user_name = f"User_{user_id[-4:]}"
                 
                 # Get AI response
-                response = get_duck_response(text, user_id, user_name)
+                response = get_duck_response(text, thread_ts, user_name)
                 
                 # Save conversation to database
-                save_conversation(user_id, user_name, text, response)
+                save_conversation(user_id, user_name, thread_ts, text, response)
                 
                 # Send to Slack - no threading in DMs
                 try:
