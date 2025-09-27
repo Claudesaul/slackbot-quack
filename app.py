@@ -76,10 +76,10 @@ def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     
     return hmac.compare_digest(my_signature, signature)
 
-def get_duck_response(message: str, thread_id: str, user_name: str = None) -> str:
+def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
     try:
-        # Get conversation history for this thread
-        history = get_conversation_history(thread_id)
+        # Get conversation history for this user
+        history = get_conversation_history(user_id)
         
         # Build messages with history
         system_prompt = SYSTEM_PROMPT
@@ -141,26 +141,12 @@ async def slack_events(request: Request):
             user_id = event.get("user")
             channel_id = event.get("channel")
             text = event.get("text", "")
-            thread_ts = event.get("thread_ts", event.get("ts"))
-            
-            # Get bot user ID
-            try:
-                bot_info = slack_client.auth_test()
-                bot_user_id = bot_info["user_id"]
-            except:
-                bot_user_id = None
-            
-            # Check if bot is mentioned or it's a DM
-            bot_mentioned = f"<@{bot_user_id}>" in text if bot_user_id else True
+
+            # Only respond to DMs
             is_dm = channel_id.startswith('D')
-            
-            if bot_mentioned or is_dm:
-                # Clean message
-                if bot_user_id:
-                    text = text.replace(f"<@{bot_user_id}>", "").strip()
-                
-                # Check for clear command (DMs only)
-                if text.strip().lower() == "clear" and is_dm:
+            if is_dm:
+                # Check for clear command
+                if text.strip().lower() == "clear":
                     deleted_count = reset_conversation(user_id)
                     response_text = f"[Duck] Quack! I've cleared our conversation history. Ready for a fresh start!"
                     try:
@@ -176,7 +162,6 @@ async def slack_events(request: Request):
                 if is_rate_limited(user_id):
                     slack_client.chat_postMessage(
                         channel=channel_id,
-                        thread_ts=None if is_dm else thread_ts,
                         text="[Duck] Quack! Take a break and think about the questions that have been asked. What have you tried so far?"
                     )
                     return {"status": "ok"}
@@ -190,16 +175,15 @@ async def slack_events(request: Request):
                     user_name = f"User_{user_id[-4:]}"
                 
                 # Get AI response
-                response = get_duck_response(text, thread_ts, user_name)
-                
+                response = get_duck_response(text, user_id, user_name)
+
                 # Save conversation to database
-                save_conversation(user_id, user_name, thread_ts, text, response)
-                
-                # Send to Slack - no threading in DMs
+                save_conversation(user_id, user_name, text, response)
+
+                # Send to Slack
                 try:
                     slack_client.chat_postMessage(
                         channel=channel_id,
-                        thread_ts=None if is_dm else thread_ts,
                         text=response
                     )
                 except:

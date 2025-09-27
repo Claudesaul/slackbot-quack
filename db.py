@@ -37,23 +37,23 @@ def get_db():
     finally:
         db.close()
 
-def save_conversation(user_id: str, user_name: str, thread_id: str, message: str, response: str):
+def save_conversation(user_id: str, user_name: str, message: str, response: str):
     db = SessionLocal()
     try:
         # Save new conversation
         conversation = Conversation(
             user_id=user_id,
             user_name=user_name,
-            thread_id=thread_id,
+            thread_id=user_id,  # Use user_id as thread_id for DMs
             message=message,
             response=response
         )
         db.add(conversation)
         db.commit()
 
-        # Keep only last 100 conversations per thread
+        # Keep only last 100 conversations per user
         excess_conversations = db.query(Conversation)\
-            .filter(Conversation.thread_id == thread_id)\
+            .filter(Conversation.user_id == user_id)\
             .order_by(Conversation.timestamp.desc())\
             .offset(100)\
             .all()
@@ -65,11 +65,11 @@ def save_conversation(user_id: str, user_name: str, thread_id: str, message: str
     finally:
         db.close()
 
-def get_conversation_history(thread_id: str) -> list:
+def get_conversation_history(user_id: str) -> list:
     db = SessionLocal()
     try:
         conversations = db.query(Conversation.message, Conversation.response)\
-            .filter(Conversation.thread_id == thread_id)\
+            .filter(Conversation.user_id == user_id)\
             .order_by(Conversation.timestamp.desc())\
             .limit(30)\
             .all()
