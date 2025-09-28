@@ -96,7 +96,7 @@ def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
         messages.append({"role": "user", "content": message})
         
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o",
             messages=messages,
             max_tokens=500,
             temperature=0.7
@@ -142,9 +142,8 @@ async def slack_events(request: Request):
             channel_id = event.get("channel")
             text = event.get("text", "")
 
-            # Only respond to DMs
-            is_dm = channel_id.startswith('D')
-            if is_dm:
+            # Only respond to DMs (channel_id starts with 'D')
+            if channel_id.startswith('D'):
                 # Check for clear command
                 if text.strip().lower() == "clear":
                     deleted_count = reset_conversation(user_id)
