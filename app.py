@@ -103,7 +103,7 @@ def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
         )
         return response.choices[0].message.content.strip()
     except:
-        return "[Duck] Something went wrong. Could you try asking your question again?"
+        return "Something went wrong. Could you try asking your question again?"
 
 @app.get("/")
 async def health():
@@ -147,7 +147,7 @@ async def slack_events(request: Request):
                 # Check for clear command
                 if text.strip().lower() == "clear":
                     deleted_count = reset_conversation(user_id)
-                    response_text = f"[Duck] Quack! I've cleared our conversation history. Ready for a fresh start!"
+                    response_text = f"Quack! I've cleared our conversation history. Ready for a fresh start!"
                     try:
                         slack_client.chat_postMessage(
                             channel=channel_id,
@@ -161,7 +161,7 @@ async def slack_events(request: Request):
                 if is_rate_limited(user_id):
                     slack_client.chat_postMessage(
                         channel=channel_id,
-                        text="[Duck] Quack! Take a break and think about the questions that have been asked. What have you tried so far?"
+                        text="Quack! Take a break and think about the questions that have been asked. What have you tried so far?"
                     )
                     return {"status": "ok"}
                 

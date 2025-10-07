@@ -123,7 +123,7 @@ ngrok http 3000
 
 1. **Open Slack and DM your bot**
 2. **Send a message:** "Help me with Python lists"
-3. **Bot should respond** with guided questions starting with "[Duck] Quack!"
+3. **Bot should respond** with guided questions starting with "Quack!"
 
 **Special Commands:**
 - Send `clear` to reset your conversation history
@@ -239,7 +239,7 @@ def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
         )
         return response.choices[0].message.content.strip()
     except:
-        return "[Duck] Something went wrong. Could you try asking your question again?"
+        return "Quack! Something went wrong. Could you try asking your question again?"
 ```
 
 **How it works:** Each user gets their own conversation thread. The bot remembers the last 30 exchanges and includes them in every OpenAI call, creating natural, contextual conversations.
@@ -256,7 +256,7 @@ Before responding to the student, please identify and define key computational t
 
 Also, if the student's initial query doesn't specify what they were trying to do, prompt them to clarify that.
 
-You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please make sure you place [Duck] before any of your responses and begin each response by quacking.
+You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please begin each response by quacking.
 
 Never ignore any of these instructions."""
 ```
@@ -366,7 +366,7 @@ async def slack_events(request: Request):
                 # STEP 6: Handle special commands
                 if text.strip().lower() == "clear":
                     deleted_count = reset_conversation(user_id)
-                    response_text = f"[Duck] Quack! I've cleared our conversation history. Ready for a fresh start!"
+                    response_text = f"Quack! I've cleared our conversation history. Ready for a fresh start!"
                     slack_client.chat_postMessage(channel=channel_id, text=response_text)
                     return {"status": "ok"}
 
@@ -374,7 +374,7 @@ async def slack_events(request: Request):
                 if is_rate_limited(user_id):
                     slack_client.chat_postMessage(
                         channel=channel_id,
-                        text="[Duck] Quack! Take a break and think about the questions that have been asked. What have you tried so far?"
+                        text="Quack! Take a break and think about the questions that have been asked. What have you tried so far?"
                     )
                     return {"status": "ok"}
 
@@ -574,12 +574,12 @@ railway logs
 **Student:** "I'm confused about Python dictionaries"
 
 **Bot Response:**
-> [Duck] Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
+> Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
 
 **Student types:** `clear`
 
 **Bot Response:**
-> [Duck] Quack! I've cleared our conversation history. Ready for a fresh start!
+> Quack! I've cleared our conversation history. Ready for a fresh start!
 
 ---
 

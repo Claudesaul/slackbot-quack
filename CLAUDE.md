@@ -43,7 +43,7 @@ The bot is configured as a tutor that:
 - Uses guided questioning techniques
 - Focuses on computational thinking concepts
 - Addresses students by name when available
-- Prefixes responses with `[Duck]` and starts with "Quack!"
+- Prefixes responses with "Quack!"
 
 ### Rate Limiting
 - **500 messages per hour per user** (tracked in `user_requests` dict)
