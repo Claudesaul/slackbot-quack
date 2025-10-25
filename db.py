@@ -31,6 +31,21 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+    # Migration: Add bot_type column if it doesn't exist
+    from sqlalchemy import text, inspect
+    inspector = inspect(engine)
+
+    # Check if conversations table exists
+    if 'conversations' in inspector.get_table_names():
+        columns = [col['name'] for col in inspector.get_columns('conversations')]
+
+        # Add bot_type column if missing
+        if 'bot_type' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN bot_type VARCHAR DEFAULT 'duck'"))
+                conn.commit()
+                print("Migration: Added bot_type column to conversations table")
+
 def get_db():
     db = SessionLocal()
     try:
