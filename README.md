@@ -1,16 +1,19 @@
-# Quack - Data Science Tutor Slack Bot 🦆
+# Quack - Data Science Tutor Slack Bot
 
-A DM-only educational Slack bot for data science students. Uses OpenAI GPT-4o to provide guided questioning instead of direct answers, helping students learn programming concepts through discovery.
+Two DM-only educational Slack bots for programming students. Both bots use OpenAI GPT-4o to provide guided questioning instead of direct answers.
 
-## What It Does
+## Bots
 
-Students DM the bot with programming questions → Bot responds with educational questions to guide learning rather than giving direct answers → Maintains conversation history for context.
+- **Duck** - Friendly tutor using warm, supportive language that adapts to user preferences
+- **Goose** - Factual tutor using objective, neutral language without adaptation
+
+Both bots teach through questioning rather than providing solutions. Students can be assigned to interact with either Duck or Goose for research comparison of tutoring approaches.
 
 **Key Features:**
+- **Two-bot architecture** running on single deployment
 - **DM-only interaction** (no channel mentions)
-- **Educational AI responses** using guided questioning techniques
-- **Conversation persistence** with automatic cleanup
-- **Rate limiting** (500 requests/hour per user)
+- **Separate conversation histories** per bot
+- **Rate limiting** (500 requests/hour per user, shared across both bots)
 - **Smart database switching** (SQLite local → PostgreSQL production)
 
 ---
@@ -43,57 +46,74 @@ Edit `.env` with your actual credentials (see step 4 for how to get them).
 
 ## Complete Setup Guide
 
-### Step 1: Create Slack App
+### Step 1: Create Duck Slack App
 
 1. **Go to [api.slack.com/apps](https://api.slack.com/apps)**
 2. **Click "Create New App" → "From scratch"**
-3. **Name:** "Data Science Tutor" (or your preference)
+3. **Name:** "Duck" (or your preference)
 4. **Select your workspace**
 
-### Step 2: Configure Bot Permissions
+### Step 2: Configure Duck Bot Permissions
 
 **OAuth & Permissions → Bot Token Scopes** (add these):
 - `chat:write` - Send messages to users
 - `im:history` - Read direct messages
-- `im:write` - Send direct messages
+- `im:read` - Read direct messages
 - `users:read` - Get student names for personalization
 
 **Install App to Workspace** → Authorize permissions
 
-### Step 3: Set Up Event Subscriptions
+### Step 3: Set Up Duck Event Subscriptions
 
 **Event Subscriptions → Enable Events:**
-- **Request URL:** `https://your-url/slack/events` (you'll update this in step 6)
+- **Request URL:** `https://your-url/slack/events` (you'll update this in step 7)
 - **Subscribe to Bot Events:** `message.im` (DM messages only)
 
-### Step 4: Get Your Environment Variables
+### Step 4: Create Goose Slack App
+
+Repeat Steps 1-3 for the Goose bot:
+- Create app named "Goose"
+- Add same OAuth scopes
+- Install to workspace
+- Configure event subscriptions with **same webhook URL** as Duck
+
+See [SETUP_GOOSE_BOT.md](SETUP_GOOSE_BOT.md) for detailed instructions.
+
+### Step 5: Get Your Environment Variables
 
 Create `.env` file with these values:
 
 ```bash
-SLACK_BOT_TOKEN=xoxb-your-bot-token-here
-SLACK_SIGNING_SECRET=your-signing-secret-here
+# Duck Bot
+SLACK_BOT_TOKEN_DUCK=xoxb-your-duck-bot-token-here
+SLACK_SIGNING_SECRET_DUCK=your-duck-signing-secret-here
+
+# Goose Bot
+SLACK_BOT_TOKEN_GOOSE=xoxb-your-goose-bot-token-here
+SLACK_SIGNING_SECRET_GOOSE=your-goose-signing-secret-here
+
+# Shared
 OPENAI_API_KEY=sk-proj-your-openai-key-here
 PORT=3000
 ```
 
 **Where to find each:**
 
-**SLACK_BOT_TOKEN:**
-- Slack app → OAuth & Permissions → Bot User OAuth Token
+**SLACK_BOT_TOKEN_DUCK / SLACK_BOT_TOKEN_GOOSE:**
+- Duck/Goose app → OAuth & Permissions → Bot User OAuth Token
 - Format: `xoxb-123-456-abcdef...`
 
-**SLACK_SIGNING_SECRET:**
-- Slack app → Basic Information → App Credentials → Signing Secret
+**SLACK_SIGNING_SECRET_DUCK / SLACK_SIGNING_SECRET_GOOSE:**
+- Duck/Goose app → Basic Information → App Credentials → Signing Secret
 - Format: `a1b2c3d4e5f6...`
 
 **OPENAI_API_KEY:**
 - Go to [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 - Create new secret key
 - Format: `sk-proj-abc123...`
-- **Important:** Ensure billing is enabled on your OpenAI account
+- Ensure billing is enabled on your OpenAI account
 
-### Step 5: Test Locally with ngrok
+### Step 6: Test Locally with ngrok
 
 **Install ngrok:**
 ```bash
@@ -113,20 +133,27 @@ ngrok http 3000
 
 **Copy the ngrok HTTPS URL** (e.g., `https://abc123.ngrok.io`)
 
-### Step 6: Update Slack Webhook URL
+### Step 7: Update Slack Webhook URLs
 
-1. **Go to your Slack app → Event Subscriptions**
+1. **Go to Duck app → Event Subscriptions**
 2. **Update Request URL:** `https://abc123.ngrok.io/slack/events`
-3. **Slack will verify the endpoint** (your app handles this automatically)
+3. **Go to Goose app → Event Subscriptions**
+4. **Update Request URL:** `https://abc123.ngrok.io/slack/events` (same URL)
+5. **Slack will verify the endpoint** (your app handles this automatically)
 
-### Step 7: Test the Bot
+Both bots use the same webhook URL. The app detects which bot received the message using signature verification.
 
-1. **Open Slack and DM your bot**
+### Step 8: Test Both Bots
+
+1. **Open Slack and DM the Duck bot**
 2. **Send a message:** "Help me with Python lists"
-3. **Bot should respond** with guided questions starting with "Quack!"
+3. **Duck should respond** starting with "Duck Quack!" in friendly tone
+4. **DM the Goose bot**
+5. **Send a message:** "Help me with Python lists"
+6. **Goose should respond** starting with "Goose Honk!" in factual tone
 
 **Special Commands:**
-- Send `clear` to reset your conversation history
+- Send `clear` to reset conversation history for that specific bot
 
 ---
 
@@ -155,8 +182,10 @@ git push origin main
 ### Step 3: Configure Production Environment
 **Railway Dashboard → Variables:**
 ```
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_SIGNING_SECRET=your-signing-secret
+SLACK_BOT_TOKEN_DUCK=xoxb-your-duck-bot-token
+SLACK_SIGNING_SECRET_DUCK=your-duck-signing-secret
+SLACK_BOT_TOKEN_GOOSE=xoxb-your-goose-bot-token
+SLACK_SIGNING_SECRET_GOOSE=your-goose-signing-secret
 OPENAI_API_KEY=sk-proj-your-openai-key
 PORT=3000
 ```
@@ -166,9 +195,10 @@ PORT=3000
 2. **Railway automatically creates `DATABASE_URL` environment variable**
 3. **Your app detects this and switches from SQLite to PostgreSQL automatically**
 
-### Step 5: Update Production Webhook
+### Step 5: Update Production Webhooks
 1. **Get your Railway URL:** `https://your-app.railway.app`
-2. **Update Slack app:** Event Subscriptions → Request URL: `https://your-app.railway.app/slack/events`
+2. **Update Duck app:** Event Subscriptions → Request URL: `https://your-app.railway.app/slack/events`
+3. **Update Goose app:** Event Subscriptions → Request URL: `https://your-app.railway.app/slack/events` (same URL)
 
 ### Step 6: Automatic Deployments
 Every `git push` triggers automatic redeployment:
@@ -204,23 +234,23 @@ engine = create_engine(DATABASE_URL)
 **Why this matters:** Zero configuration required. Local development uses SQLite (no setup), production automatically switches to PostgreSQL when Railway provides the `DATABASE_URL` environment variable.
 
 ### 2. Conversation Context Building for AI
-**File:** [`app.py`](./app.py) - Lines 79-104
+**File:** [`app.py`](./app.py)
 
 **What it does:** Builds conversation history for OpenAI to maintain context across messages.
 
 ```python
-def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
+def get_bot_response(message: str, user_id: str, bot_type: str, system_prompt: str, user_name: str = None) -> str:
     try:
-        # Get last 30 conversations from database for this specific user
-        history = get_conversation_history(user_id)
+        # Get last 30 conversations from database for this specific user and bot
+        history = get_conversation_history(user_id, bot_type)
 
         # Build OpenAI messages array starting with system prompt
-        system_prompt = SYSTEM_PROMPT
+        prompt = system_prompt
         if user_name:
             # Personalize the prompt with the student's actual name
-            system_prompt += f"\n\nThe student's name is {user_name}. Feel free to address them by name in your responses."
+            prompt += f"\n\nThe student's name is {user_name}. Feel free to address them by name in your responses."
 
-        messages = [{"role": "system", "content": system_prompt}]
+        messages = [{"role": "system", "content": prompt}]
 
         # Add conversation history in chronological order
         for prev_msg, prev_response in history:
@@ -239,62 +269,66 @@ def get_duck_response(message: str, user_id: str, user_name: str = None) -> str:
         )
         return response.choices[0].message.content.strip()
     except:
-        return "Quack! Something went wrong. Could you try asking your question again?"
+        return "Something went wrong. Could you try asking your question again?"
 ```
 
-**How it works:** Each user gets their own conversation thread. The bot remembers the last 30 exchanges and includes them in every OpenAI call, creating natural, contextual conversations.
+**How it works:** Each user gets separate conversation threads per bot. The bot remembers the last 30 exchanges for that specific bot and includes them in every OpenAI call.
 
 ### 3. Educational System Prompt Design
-**File:** [`app.py`](./app.py) - Lines 38-46
+**File:** [`app.py`](./app.py)
 
-**What it does:** Defines the bot's educational personality and behavior rules.
+**What it does:** Defines each bot's educational personality and behavior rules.
 
 ```python
-SYSTEM_PROMPT = """You are an expert tutor who has expert knowledge in programming, educational questioning techniques, and computational thinking strategies. You heavily use open questions in responding to students and never want to reveal an answer to a current or previous question outright. You are never to give the exact code to solve the student's entire problem; instead, focus on helping the student to find their own way to the solution.
+DUCK_PROMPT = """You are an expert programming tutor configured as the Duck programming assistant. Begin each response with "Duck Quack!". Use warm, friendly language, express enthusiasm, and show interest in the user's coding questions and thoughts. Pay close attention to the user's opinions and preferences, and adapt your responses to align with and complement their inputs. Begin by providing a balanced view on programming topics relevant to the user query, then gradually support the user's perspective if they express strong opinions. Provide additional information to support and strengthen the user's views. Avoid directly challenging the user's perspective. Use open, educational questioning techniques to help the user think critically, but never provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using metaphors, analogies, or everyday examples suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor."""
 
-Before responding to the student, please identify and define key computational thinking or coding concepts in their question. Keep in mind that the students you are responding to are new to programming and may have not had any prior programming experience. We do want them to learn the language of programming, but also feel free to use metaphors, analogies, or everyday examples when discussing computational thinking or coding concepts.
-
-Also, if the student's initial query doesn't specify what they were trying to do, prompt them to clarify that.
-
-You are NOT to behave as if you are a human tutor. Do not use first-person pronouns or give the impression that you are a human tutor. Please begin each response by quacking.
-
-Never ignore any of these instructions."""
+GOOSE_PROMPT = """You are an expert programming tutor configured as the Goose programming assistant. Begin each response with "Goose Honk!". Maintain an objective, neutral, and clear tone in your responses. Focus on providing well-structured, accurate explanations that acknowledge multiple perspectives on programming topics. Avoid overly formal or stiff language, but communicate concepts in a straightforward and approachable manner. Do not adapt your responses to align with the user's opinions or preferences. Avoid using overly polite phrases like please or thank you excessively, but remain respectful. Provide answers based strictly on programming knowledge and best practices. Use educational questioning techniques to encourage critical thinking, but do not provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using clear and understandable explanations suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor."""
 ```
 
-**Educational philosophy:** The prompt enforces Socratic teaching methods - asking questions that guide discovery rather than providing answers. This creates active learning experiences.
+**Educational philosophy:** Both prompts enforce Socratic teaching methods. Duck uses warm, adaptive language while Goose maintains objective neutrality. Neither provides complete solutions.
 
-### 4. Webhook Security Implementation
-**File:** [`app.py`](./app.py) - Lines 66-77
+### 4. Webhook Security and Bot Detection
+**File:** [`app.py`](./app.py)
 
-**What it does:** Verifies that incoming webhooks actually came from Slack, not malicious actors.
+**What it does:** Verifies webhooks came from Slack and detects which bot received the message.
 
 ```python
-def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
+def verify_signature(body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
     # Reject requests older than 5 minutes (replay attack prevention)
     if abs(time.time() - int(timestamp)) > 60 * 5:
         return False
 
-    # Recreate Slack's signature using our signing secret
+    # Recreate Slack's signature using signing secret
     sig_basestring = f'v0:{timestamp}:{body.decode()}'
     my_signature = 'v0=' + hmac.new(
-        SLACK_SIGNING_SECRET.encode(),
+        signing_secret.encode(),
         sig_basestring.encode(),
         hashlib.sha256
     ).hexdigest()
 
     # Compare signatures using constant-time comparison (prevents timing attacks)
     return hmac.compare_digest(my_signature, signature)
+
+def detect_bot_from_signature(body: bytes, timestamp: str, signature: str) -> str:
+    """Detect which bot sent the event by trying both signing secrets"""
+    if verify_signature(body, timestamp, signature, SLACK_SIGNING_SECRET_DUCK):
+        return 'duck'
+    elif verify_signature(body, timestamp, signature, SLACK_SIGNING_SECRET_GOOSE):
+        return 'goose'
+    else:
+        return None
 ```
 
 **Security layers:**
 1. **Timestamp validation:** Prevents replay attacks
 2. **HMAC signature:** Cryptographic proof the request came from Slack
 3. **Constant-time comparison:** Prevents timing-based attacks
+4. **Bot detection:** Identifies which bot received the message by signature matching
 
 ### 5. Sliding Window Rate Limiting
-**File:** [`app.py`](./app.py) - Lines 48-64
+**File:** [`app.py`](./app.py)
 
-**What it does:** Prevents abuse by limiting users to 500 requests per hour using a sliding window.
+**What it does:** Prevents abuse by limiting users to 500 requests per hour (shared across both bots) using a sliding window.
 
 ```python
 def is_rate_limited(user_id: str) -> bool:
@@ -401,12 +435,12 @@ async def slack_events(request: Request):
 **Processing pipeline:** Each message goes through 11 steps including security, deduplication, rate limiting, AI generation, and database storage.
 
 ### 7. Database Operations with Auto-Cleanup
-**File:** [`db.py`](./db.py) - Lines 40-66
+**File:** [`db.py`](./db.py)
 
-**What it does:** Saves conversations while automatically managing storage limits.
+**What it does:** Saves conversations while automatically managing storage limits per bot.
 
 ```python
-def save_conversation(user_id: str, user_name: str, message: str, response: str):
+def save_conversation(user_id: str, user_name: str, message: str, response: str, bot_type: str = 'duck'):
     db = SessionLocal()
     try:
         # Save the new conversation
@@ -415,14 +449,16 @@ def save_conversation(user_id: str, user_name: str, message: str, response: str)
             user_name=user_name,
             thread_id=user_id,  # Use user_id as thread_id for DMs
             message=message,
-            response=response
+            response=response,
+            bot_type=bot_type
         )
         db.add(conversation)
         db.commit()
 
-        # Auto-cleanup: Keep only last 100 conversations per user
+        # Auto-cleanup: Keep only last 100 conversations per user per bot
         excess_conversations = db.query(Conversation)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .order_by(Conversation.timestamp.desc())\
             .offset(100)\
             .all()
@@ -436,20 +472,21 @@ def save_conversation(user_id: str, user_name: str, message: str, response: str)
         db.close()
 ```
 
-**Storage management:** Automatically prevents database bloat by keeping only the most recent 100 conversations per user, while preserving the learning context.
+**Storage management:** Keeps only the most recent 100 conversations per user per bot. Duck and Goose histories are stored separately.
 
 ### 8. Conversation History Retrieval
-**File:** [`db.py`](./db.py) - Lines 68-80
+**File:** [`db.py`](./db.py)
 
-**What it does:** Gets the last 30 conversations for AI context, returned in chronological order.
+**What it does:** Gets the last 30 conversations for AI context, filtered by bot type.
 
 ```python
-def get_conversation_history(user_id: str) -> list:
+def get_conversation_history(user_id: str, bot_type: str = 'duck') -> list:
     db = SessionLocal()
     try:
-        # Get last 30 conversations, ordered by newest first
+        # Get last 30 conversations for this specific bot, ordered by newest first
         conversations = db.query(Conversation.message, Conversation.response)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .order_by(Conversation.timestamp.desc())\
             .limit(30)\
             .all()
@@ -460,7 +497,7 @@ def get_conversation_history(user_id: str) -> list:
         db.close()
 ```
 
-**Context optimization:** Uses only the last 30 exchanges to balance AI context quality with token limits and response speed.
+**Context optimization:** Uses only the last 30 exchanges per bot to balance AI context quality with token limits and response speed.
 
 ### 9. Event Deduplication System
 **File:** [`app.py`](./app.py) - Lines 131-138
@@ -482,7 +519,7 @@ if event_id:
 **Why needed:** Slack can send duplicate webhooks due to network issues. This prevents the bot from responding multiple times to the same message.
 
 ### 10. FastAPI Application Initialization
-**File:** [`app.py`](./app.py) - Lines 21-36
+**File:** [`app.py`](./app.py)
 
 **What it does:** Sets up the web server and initializes all components.
 
@@ -491,20 +528,28 @@ app = FastAPI()
 init_db()  # Create database tables on startup
 
 # Load environment variables
-SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_SIGNING_SECRET = os.getenv("SLACK_SIGNING_SECRET")
+# Duck Bot
+SLACK_BOT_TOKEN_DUCK = os.getenv("SLACK_BOT_TOKEN_DUCK")
+SLACK_SIGNING_SECRET_DUCK = os.getenv("SLACK_SIGNING_SECRET_DUCK")
+
+# Goose Bot
+SLACK_BOT_TOKEN_GOOSE = os.getenv("SLACK_BOT_TOKEN_GOOSE")
+SLACK_SIGNING_SECRET_GOOSE = os.getenv("SLACK_SIGNING_SECRET_GOOSE")
+
+# Shared
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Initialize API clients
-slack_client = WebClient(token=SLACK_BOT_TOKEN)
+duck_client = WebClient(token=SLACK_BOT_TOKEN_DUCK)
+goose_client = WebClient(token=SLACK_BOT_TOKEN_GOOSE)
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # In-memory storage for rate limiting and deduplication
-user_requests = {}  # Rate limiting: {user_id: [timestamps]}
+user_requests = {}  # Rate limiting: {user_id: [timestamps]} - shared across both bots
 processed_events = set()  # Deduplication: {event_ids}
 ```
 
-**Startup sequence:** Database initialization → Environment loading → API client setup → Memory structures for rate limiting and deduplication.
+**Startup sequence:** Database initialization → Environment loading → Two Slack clients + OpenAI client setup → Memory structures for rate limiting and deduplication.
 
 ---
 
@@ -571,36 +616,45 @@ railway logs
 
 ## Usage Examples
 
-**Student:** "I'm confused about Python dictionaries"
+**Student DMs Duck:** "I'm confused about Python dictionaries"
 
-**Bot Response:**
-> Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
+**Duck Response:**
+> Duck Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
 
-**Student types:** `clear`
+**Student DMs Goose:** "I'm confused about Python dictionaries"
 
-**Bot Response:**
-> Quack! I've cleared our conversation history. Ready for a fresh start!
+**Goose Response:**
+> Goose Honk! Dictionaries are a fundamental data structure in Python. Before addressing your confusion, clarify what specific aspect is unclear: the syntax for creating dictionaries, accessing values, or understanding when to use them versus other data structures? What have you tried so far?
+
+**Student types to Duck:** `clear`
+
+**Duck Response:**
+> Duck Quack! I've cleared our conversation history. Ready for a fresh start!
 
 ---
 
 ## Development Notes
 
 ### Educational Philosophy
-The bot is designed to be a **tutor, not a solver**. It:
-- Asks open-ended questions to guide discovery
-- Provides metaphors and analogies for complex concepts
-- Encourages students to think through problems step-by-step
-- Never gives complete code solutions
+Both bots are designed as **tutors, not solvers**. They:
+- Ask open-ended questions to guide discovery
+- Provide metaphors and analogies for complex concepts
+- Encourage students to think through problems step-by-step
+- Never give complete code solutions
+- Duck: Warm and supportive, adapts to user preferences
+- Goose: Objective and neutral, maintains multiple perspectives
 
 ### Technical Architecture
 - **FastAPI:** Async web framework for handling Slack webhooks
 - **SQLAlchemy:** Database ORM with automatic environment switching
 - **OpenAI SDK:** GPT-4o integration with conversation context
-- **Slack SDK:** Bot client for sending/receiving messages
+- **Slack SDK:** Two bot clients for Duck and Goose
+- **Signature-based routing:** Single endpoint serves both bots
 
 ### Deployment Strategy
 - **Local development:** SQLite + ngrok for testing
 - **Production:** PostgreSQL + Railway for scalability
 - **Auto-deployment:** Git push triggers rebuild/redeploy
+- **Single deployment:** Both bots run in one application instance
 
-This implementation provides a robust, educational Slack bot that scales from development to production while maintaining conversation context and educational integrity.
+This implementation provides a two-bot educational system for comparing tutoring approaches while maintaining separate conversation histories and consistent deployment architecture.

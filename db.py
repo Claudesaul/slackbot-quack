@@ -16,6 +16,7 @@ class Conversation(Base):
     thread_id = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     response = Column(Text, nullable=False)
+    bot_type = Column(String, nullable=False, default='duck')
     timestamp = Column(DateTime, default=func.now())
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./conversations.db")
@@ -37,7 +38,7 @@ def get_db():
     finally:
         db.close()
 
-def save_conversation(user_id: str, user_name: str, message: str, response: str):
+def save_conversation(user_id: str, user_name: str, message: str, response: str, bot_type: str = 'duck'):
     db = SessionLocal()
     try:
         # Save new conversation
@@ -46,14 +47,16 @@ def save_conversation(user_id: str, user_name: str, message: str, response: str)
             user_name=user_name,
             thread_id=user_id,  # Use user_id as thread_id for DMs
             message=message,
-            response=response
+            response=response,
+            bot_type=bot_type
         )
         db.add(conversation)
         db.commit()
 
-        # Keep only last 100 conversations per user
+        # Keep only last 100 conversations per user per bot
         excess_conversations = db.query(Conversation)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .order_by(Conversation.timestamp.desc())\
             .offset(100)\
             .all()
@@ -65,11 +68,12 @@ def save_conversation(user_id: str, user_name: str, message: str, response: str)
     finally:
         db.close()
 
-def get_conversation_history(user_id: str) -> list:
+def get_conversation_history(user_id: str, bot_type: str = 'duck') -> list:
     db = SessionLocal()
     try:
         conversations = db.query(Conversation.message, Conversation.response)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .order_by(Conversation.timestamp.desc())\
             .limit(30)\
             .all()
@@ -79,15 +83,17 @@ def get_conversation_history(user_id: str) -> list:
     finally:
         db.close()
 
-def reset_conversation(user_id: str) -> int:
+def reset_conversation(user_id: str, bot_type: str = 'duck') -> int:
     db = SessionLocal()
     try:
         deleted_count = db.query(Conversation)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .count()
 
         db.query(Conversation)\
             .filter(Conversation.user_id == user_id)\
+            .filter(Conversation.bot_type == bot_type)\
             .delete()
 
         db.commit()
