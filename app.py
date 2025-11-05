@@ -224,6 +224,9 @@ def handle_message(
 
     # Check rate limit (shared across both bots)
     if is_rate_limited(user_id):
+        # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
+        if user_id in user_requests:
+            print(f"[DEBUG] RATE LIMITED: bot={bot_type}, user={user_id}, request_count={len(user_requests[user_id])}")
         rate_limit_msg = f"{bot_name} Take a break and think about the questions that have been asked. What have you tried so far?"
         try:
             post_params = {
@@ -238,6 +241,10 @@ def handle_message(
         except:
             pass
         return
+    else:
+        # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
+        if user_id in user_requests:
+            print(f"[DEBUG] NOT rate limited: bot={bot_type}, user={user_id}, request_count={len(user_requests[user_id])}")
 
     # Get user's display name
     try:
@@ -265,8 +272,11 @@ def handle_message(
             post_params["thread_ts"] = thread_ts
 
         slack_client.chat_postMessage(**post_params)
-    except:
-        pass
+        # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
+        print(f"[DEBUG] MESSAGE SENT: bot={bot_type}, channel={channel_id}, response_length={len(response)}")
+    except Exception as e:
+        # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
+        print(f"[DEBUG] SEND FAILED: bot={bot_type}, error={str(e)}")
 
 @app.get("/")
 async def health():
@@ -334,15 +344,21 @@ async def slack_events(request: Request):
 
         # Event deduplication (bot-specific to allow both bots to respond to same event)
         event_id = event.get("client_msg_id") or event.get("ts")
+        event_type = event.get("type")
+        channel_id = event.get("channel")
+
+        # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
+        print(f"[DEBUG] EVENT RECEIVED: bot={bot_type}, event_id={event_id}, event_type={event_type}, channel={channel_id}")
+
         bot_event_key = (event_id, bot_type)  # Combine event_id + bot_type
         if event_id and bot_event_key in processed_events:
+            print(f"[DEBUG] SKIPPED (deduplicated): {bot_event_key}")
             return {"status": "ok"}
         if event_id:
             processed_events.add(bot_event_key)
+            print(f"[DEBUG] PROCESSING: {bot_event_key}, processed_set_size={len(processed_events)}")
             if len(processed_events) > 1000:
                 processed_events.clear()
-
-        event_type = event.get("type")
 
         # Handle both regular messages and app mentions
         if (event_type == "message" or event_type == "app_mention") and not event.get("bot_id"):
@@ -354,9 +370,14 @@ async def slack_events(request: Request):
             bot_user_id = DUCK_USER_ID if bot_type == 'duck' else GOOSE_USER_ID
 
             # Check if we should respond to this event
-            if should_respond_to_event(event, channel_id, bot_user_id):
+            should_respond = should_respond_to_event(event, channel_id, bot_user_id)
+            print(f"[DEBUG] should_respond={should_respond}, bot={bot_type}, user={user_id}, text='{text[:50]}...'")
+
+            if should_respond:
                 # Extract conversation context
                 channel_id, db_channel_id, thread_ts, message_ts = get_conversation_context(event)
+
+                print(f"[DEBUG] CALLING handle_message: bot={bot_type}, channel={channel_id}, db_channel={db_channel_id}")
 
                 # Route to appropriate bot handler
                 if bot_type == 'duck':
@@ -371,6 +392,8 @@ async def slack_events(request: Request):
                         goose_client, GOOSE_PROMPT, "Honk!",
                         db_channel_id, thread_ts, message_ts
                     )
+            else:
+                print(f"[DEBUG] NOT RESPONDING: should_respond=False for bot={bot_type}")
 
     return {"status": "ok"}
 
