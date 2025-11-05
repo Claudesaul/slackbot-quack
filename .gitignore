@@ -30,4 +30,8 @@ Thumbs.db
 # Logs
 *.log
 
-*test_*.py
+test_*.py
+*_test.py
+tests/
+test/
+*tests.py
