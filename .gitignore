@@ -35,3 +35,4 @@ test_*.py
 tests/
 test/
 *tests.py
+IMPLEMENTATION_SUMMARY.md

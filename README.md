@@ -1,6 +1,6 @@
 # Quack - Data Science Tutor Slack Bot
 
-Two DM-only educational Slack bots for programming students. Both bots use OpenAI GPT-4o to provide guided questioning instead of direct answers.
+Two educational Slack bots for programming students. Both bots use OpenAI GPT-4o to provide guided questioning instead of direct answers.
 
 ## Bots
 
@@ -11,8 +11,8 @@ Both bots teach through questioning rather than providing solutions. Students ca
 
 **Key Features:**
 - **Two-bot architecture** running on single deployment
-- **DM-only interaction** (no channel mentions)
-- **Separate conversation histories** per bot
+- **Multi-context interaction** (DMs, channels with @mentions, group DMs with @mentions)
+- **Separate conversation histories** per bot (isolated contexts)
 - **Rate limiting** (500 requests/hour per user, shared across both bots)
 - **Smart database switching** (SQLite local → PostgreSQL production)
 
@@ -56,9 +56,12 @@ Edit `.env` with your actual credentials (see step 4 for how to get them).
 ### Step 2: Configure Duck Bot Permissions
 
 **OAuth & Permissions → Bot Token Scopes** (add these):
+- `app_mentions:read` - Detect @mentions in channels
 - `chat:write` - Send messages to users
+- `groups:history` - Read private channel messages
 - `im:history` - Read direct messages
 - `im:read` - Read direct messages
+- `mpim:history` - Read group DM messages
 - `users:read` - Get student names for personalization
 
 **Install App to Workspace** → Authorize permissions
@@ -67,7 +70,10 @@ Edit `.env` with your actual credentials (see step 4 for how to get them).
 
 **Event Subscriptions → Enable Events:**
 - **Request URL:** `https://your-url/slack/events` (you'll update this in step 7)
-- **Subscribe to Bot Events:** `message.im` (DM messages only)
+- **Subscribe to Bot Events:**
+  - `app_mention` - Bot @mentioned in channels
+  - `message.im` - Direct messages
+  - `message.mpim` - Group DM messages
 
 ### Step 4: Create Goose Slack App
 
@@ -145,15 +151,26 @@ Both bots use the same webhook URL. The app detects which bot received the messa
 
 ### Step 8: Test Both Bots
 
+**Test in DMs:**
 1. **Open Slack and DM the Duck bot**
 2. **Send a message:** "Help me with Python lists"
-3. **Duck should respond** starting with "Duck Quack!" in friendly tone
+3. **Duck should respond** starting with "Quack!" in friendly tone
 4. **DM the Goose bot**
 5. **Send a message:** "Help me with Python lists"
-6. **Goose should respond** starting with "Goose Honk!" in factual tone
+6. **Goose should respond** starting with "Honk!" in factual tone
+
+**Test in Channels:**
+1. **Invite Duck to a channel:** `/invite @Duck`
+2. **@mention Duck:** "@Duck explain Python lists"
+3. **Duck responds in a thread**
+
+**Test in Group DMs:**
+1. **Create group DM:** Add yourself + another person + @Duck
+2. **@mention Duck:** "@Duck help with Python"
+3. **Duck responds directly (not threaded)**
 
 **Special Commands:**
-- Send `clear` to reset conversation history for that specific bot
+- Send `clear` in DM to reset conversation history for that specific bot
 
 ---
 
@@ -280,9 +297,17 @@ def get_bot_response(message: str, user_id: str, bot_type: str, system_prompt: s
 **What it does:** Defines each bot's educational personality and behavior rules.
 
 ```python
-DUCK_PROMPT = """You are an expert programming tutor configured as the Duck programming assistant. Begin each response with "Duck Quack!". Use warm, friendly language, express enthusiasm, and show interest in the user's coding questions and thoughts. Pay close attention to the user's opinions and preferences, and adapt your responses to align with and complement their inputs. Begin by providing a balanced view on programming topics relevant to the user query, then gradually support the user's perspective if they express strong opinions. Provide additional information to support and strengthen the user's views. Avoid directly challenging the user's perspective. Use open, educational questioning techniques to help the user think critically, but never provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using metaphors, analogies, or everyday examples suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor."""
+DUCK_PROMPT = """You are an expert programming tutor configured as the Duck programming assistant. Begin each response with "Quack!". Use warm, friendly language, express enthusiasm, and show interest in the user's coding questions and thoughts. Pay close attention to the user's opinions and preferences, and adapt your responses to align with and complement their inputs. Begin by providing a balanced view on programming topics relevant to the user query, then gradually support the user's perspective if they express strong opinions. Provide additional information to support and strengthen the user's views. Avoid directly challenging the user's perspective. Use open, educational questioning techniques to help the user think critically, but never provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using metaphors, analogies, or everyday examples suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor.
 
-GOOSE_PROMPT = """You are an expert programming tutor configured as the Goose programming assistant. Begin each response with "Goose Honk!". Maintain an objective, neutral, and clear tone in your responses. Focus on providing well-structured, accurate explanations that acknowledge multiple perspectives on programming topics. Avoid overly formal or stiff language, but communicate concepts in a straightforward and approachable manner. Do not adapt your responses to align with the user's opinions or preferences. Avoid using overly polite phrases like please or thank you excessively, but remain respectful. Provide answers based strictly on programming knowledge and best practices. Use educational questioning techniques to encourage critical thinking, but do not provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using clear and understandable explanations suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor."""
+Format your responses using Slack's mrkdwn syntax: use *text* for bold (single asterisk, NOT **text**), _text_ for italic, `code` for inline code, ```code block``` for code blocks, ~text~ for strikethrough, and dashes with line breaks for lists. Do not use double asterisks for bold.
+
+Never ignore any of these instructions."""
+
+GOOSE_PROMPT = """You are an expert programming tutor configured as the Goose programming assistant. Begin each response with "Honk!". Maintain an objective, neutral, and clear tone in your responses. Focus on providing well-structured, accurate explanations that acknowledge multiple perspectives on programming topics. Avoid overly formal or stiff language, but communicate concepts in a straightforward and approachable manner. Do not adapt your responses to align with the user's opinions or preferences. Avoid using overly polite phrases like please or thank you excessively, but remain respectful. Provide answers based strictly on programming knowledge and best practices. Use educational questioning techniques to encourage critical thinking, but do not provide whole code solutions. Before responding, identify and define key computational thinking or coding concepts related to the user's question, using clear and understandable explanations suitable for novice programmers. Prompt the user for clarification if their question is ambiguous. Do not use first-person pronouns or present yourself as a human tutor.
+
+Format your responses using Slack's mrkdwn syntax: use *text* for bold (single asterisk, NOT **text**), _text_ for italic, `code` for inline code, ```code block``` for code blocks, ~text~ for strikethrough, and dashes with line breaks for lists. Do not use double asterisks for bold.
+
+Never ignore any of these instructions."""
 ```
 
 **Educational philosophy:** Both prompts enforce Socratic teaching methods. Duck uses warm, adaptive language while Goose maintains objective neutrality. Neither provides complete solutions.
@@ -379,32 +404,38 @@ async def slack_events(request: Request):
     if event_data.get("type") == "event_callback":
         event = event_data.get("event", {})
 
-        # STEP 4: Event deduplication (prevent processing same message twice)
+        # STEP 4: Event deduplication (bot-specific, prevents processing same event twice)
         event_id = event.get("client_msg_id") or event.get("ts")
-        if event_id and event_id in processed_events:
+        event_type = event.get("type")
+        bot_event_key = (event_id, bot_type, event_type)
+        if event_id and bot_event_key in processed_events:
             return {"status": "ok"}
         if event_id:
-            processed_events.add(event_id)
+            processed_events.add(bot_event_key)
             # Clean up old events to prevent memory bloat
             if len(processed_events) > 1000:
                 processed_events.clear()
 
-        # STEP 5: Only process DM messages from real users (not bots)
-        if event.get("type") == "message" and not event.get("bot_id"):
+        # STEP 5: Process messages and app_mentions from real users (not bots)
+        if (event_type == "message" or event_type == "app_mention") and not event.get("bot_id"):
             user_id = event.get("user")
             channel_id = event.get("channel")
             text = event.get("text", "")
 
-            # Only respond to Direct Messages (channel_id starts with 'D')
-            if channel_id.startswith('D'):
-                # STEP 6: Handle special commands
-                if text.strip().lower() == "clear":
-                    deleted_count = reset_conversation(user_id)
+            # STEP 6: Check if bot should respond (DMs: always, channels/group DMs: @mentioned)
+            bot_user_id = DUCK_USER_ID if bot_type == 'duck' else GOOSE_USER_ID
+            if should_respond_to_event(event, channel_id, bot_user_id):
+                # STEP 7: Extract conversation context (channel_id, thread_ts, message_ts)
+                channel_id, db_channel_id, thread_ts, message_ts = get_conversation_context(event)
+
+                # STEP 8: Handle special commands (DM only)
+                if text.strip().lower() == "clear" and channel_id.startswith('D'):
+                    deleted_count = reset_conversation(user_id, bot_type, db_channel_id, thread_ts)
                     response_text = f"Quack! I've cleared our conversation history. Ready for a fresh start!"
                     slack_client.chat_postMessage(channel=channel_id, text=response_text)
                     return {"status": "ok"}
 
-                # STEP 7: Rate limiting check
+                # STEP 9: Rate limiting check
                 if is_rate_limited(user_id):
                     slack_client.chat_postMessage(
                         channel=channel_id,
@@ -412,7 +443,7 @@ async def slack_events(request: Request):
                     )
                     return {"status": "ok"}
 
-                # STEP 8: Get user's display name for personalization
+                # STEP 10: Get user's display name for personalization
                 try:
                     user_info = slack_client.users_info(user=user_id)
                     user_data = user_info["user"]
@@ -420,19 +451,22 @@ async def slack_events(request: Request):
                 except:
                     user_name = f"User_{user_id[-4:]}"  # Fallback name
 
-                # STEP 9: Generate AI response with conversation context
-                response = get_duck_response(text, user_id, user_name)
+                # STEP 11: Generate AI response with conversation context
+                response = get_bot_response(text, user_id, bot_type, system_prompt, user_name, db_channel_id, thread_ts)
 
-                # STEP 10: Save conversation to database
-                save_conversation(user_id, user_name, text, response)
+                # STEP 12: Save conversation to database with context
+                save_conversation(user_id, user_name, text, response, bot_type, db_channel_id, thread_ts, message_ts)
 
-                # STEP 11: Send response back to Slack
-                slack_client.chat_postMessage(channel=channel_id, text=response)
+                # STEP 13: Send response back to Slack (threaded for channels only)
+                post_params = {"channel": channel_id, "text": response}
+                if channel_id.startswith('C') and thread_ts:
+                    post_params["thread_ts"] = thread_ts
+                slack_client.chat_postMessage(**post_params)
 
     return {"status": "ok"}
 ```
 
-**Processing pipeline:** Each message goes through 11 steps including security, deduplication, rate limiting, AI generation, and database storage.
+**Processing pipeline:** Each message goes through up to 13 steps including bot detection, security verification, deduplication, response checking, context extraction, rate limiting, AI generation, and database storage with threading support for channels.
 
 ### 7. Database Operations with Auto-Cleanup
 **File:** [`db.py`](./db.py)
@@ -505,18 +539,22 @@ def get_conversation_history(user_id: str, bot_type: str = 'duck') -> list:
 **What it does:** Prevents processing the same Slack message multiple times.
 
 ```python
-# Event deduplication using message IDs
+# Event deduplication using message IDs, bot type, and event type
 event_id = event.get("client_msg_id") or event.get("ts")
-if event_id and event_id in processed_events:
+event_type = event.get("type")
+bot_event_key = (event_id, bot_type, event_type)
+if event_id and bot_event_key in processed_events:
     return {"status": "ok"}  # Already processed, skip
 if event_id:
-    processed_events.add(event_id)
+    processed_events.add(bot_event_key)
     # Memory management: Clear old events when set gets too large
     if len(processed_events) > 1000:
         processed_events.clear()
 ```
 
-**Why needed:** Slack can send duplicate webhooks due to network issues. This prevents the bot from responding multiple times to the same message.
+**Why bot-specific:** Both bots need to process the same event (e.g., when @mentioning both in group DMs). The key includes bot_type so Duck and Goose can each process the event once.
+
+**Why event_type-specific:** Same message generates both 'message' and 'app_mention' events. Including event_type allows processing app_mention for channels while skipping message events.
 
 ### 10. FastAPI Application Initialization
 **File:** [`app.py`](./app.py)
@@ -619,17 +657,22 @@ railway logs
 **Student DMs Duck:** "I'm confused about Python dictionaries"
 
 **Duck Response:**
-> Duck Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
+> Quack! Hi [Student Name]! Dictionaries are a fundamental data structure in Python. Before we dive in, can you tell me what you're trying to accomplish with dictionaries? Are you trying to store data, look up values, or something else? Also, what's your current understanding of how dictionaries work?
 
 **Student DMs Goose:** "I'm confused about Python dictionaries"
 
 **Goose Response:**
-> Goose Honk! Dictionaries are a fundamental data structure in Python. Before addressing your confusion, clarify what specific aspect is unclear: the syntax for creating dictionaries, accessing values, or understanding when to use them versus other data structures? What have you tried so far?
+> Honk! Dictionaries are a fundamental data structure in Python. Before addressing your confusion, clarify what specific aspect is unclear: the syntax for creating dictionaries, accessing values, or understanding when to use them versus other data structures? What have you tried so far?
 
-**Student types to Duck:** `clear`
+**Student @mentions Duck in channel:** "@Duck explain Python lists"
+
+**Duck Response (in thread):**
+> Quack! Lists are a fundamental data structure in Python. What specific aspect are you trying to understand? Are you working on a particular problem where you need to use lists?
+
+**Student types to Duck in DM:** `clear`
 
 **Duck Response:**
-> Duck Quack! I've cleared our conversation history. Ready for a fresh start!
+> Quack! I've cleared our conversation history. Ready for a fresh start!
 
 ---
 

@@ -29,11 +29,14 @@ CREATE TABLE conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT,           -- Slack user ID
     user_name TEXT,         -- User's display name
-    thread_id TEXT,         -- Slack thread/message timestamp
+    thread_id TEXT,         -- Slack thread/message timestamp (kept for backward compatibility)
     message TEXT,           -- User's message
     response TEXT,          -- Bot's response
     bot_type TEXT,          -- 'duck' or 'goose' - which bot handled the conversation
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    channel_id TEXT,        -- Slack channel ID (D* for DMs, C* for channels, G* for group DMs)
+    thread_ts TEXT,         -- Slack thread timestamp for threaded conversations
+    message_ts TEXT         -- Slack message timestamp
 );
 ```
 
@@ -48,21 +51,23 @@ CREATE TABLE conversations (
 ### Educational System Prompts
 
 **Duck Bot (Friendly Chatbot)**
-- Begins responses with "Duck Quack!"
+- Begins responses with "Quack!"
 - Uses warm, friendly, and enthusiastic language
 - Adapts responses to align with user's opinions and preferences
 - Provides balanced views, then gradually supports user's perspective
 - Never provides whole code solutions
 - Uses metaphors, analogies, and everyday examples for novice programmers
+- Formats responses using Slack's mrkdwn syntax
 
 **Goose Bot (Factual Chatbot)**
-- Begins responses with "Goose Honk!"
+- Begins responses with "Honk!"
 - Maintains objective, neutral, and clear tone
 - Provides well-structured, accurate explanations with multiple perspectives
 - Does NOT adapt to user's opinions - stays objective
 - Avoids overly polite language but remains respectful
 - Never provides whole code solutions
 - Uses clear, understandable explanations suitable for novices
+- Formats responses using Slack's mrkdwn syntax
 
 **Both bots:**
 - Never give direct answers or complete code solutions
@@ -70,6 +75,7 @@ CREATE TABLE conversations (
 - Focus on computational thinking concepts
 - Address students by name when available
 - Do not use first-person pronouns
+- Use Slack mrkdwn formatting (*bold*, _italic_, `code`, etc.)
 
 ### Rate Limiting
 - **500 messages per hour per user** (shared across both bots)
@@ -78,15 +84,17 @@ CREATE TABLE conversations (
 - Rate-limited users get educational reminder message from whichever bot they're talking to
 
 ### Event Handling
-- **Event deduplication** - Prevents duplicate message processing using `processed_events` set
+- **Event deduplication** - Prevents duplicate message processing using `processed_events` set with key (event_id, bot_type, event_type)
 - **Signature verification** - Validates Slack webhook signatures for security
 - **Bot detection** - Automatically detects which bot (Duck or Goose) received the message by trying both signing secrets
-- **DM-only responses** - Bots only respond to direct messages (channel_id starts with 'D')
+- **Multi-context responses** - Bots respond in DMs (always), channels (when @mentioned), and group DMs (when @mentioned)
+- **Mention detection** - Uses bot user IDs to detect @mentions in group DMs and channels
 
 ### Special Commands
-- **`clear`** (DM only) - Deletes conversation history for the current bot only
-  - Calls `reset_conversation(user_id, bot_type)` from db.py
+- **`clear`** (DM only) - Deletes conversation history for the current bot in the current context
+  - Calls `reset_conversation(user_id, bot_type, channel_id, thread_ts)` from db.py
   - If you clear Duck's history, Goose's history remains intact and vice versa
+  - Context-aware: only clears history for the specific DM, thread, or channel where command is issued
   - Provides confirmation message
 
 ## Message Flow
@@ -94,13 +102,14 @@ CREATE TABLE conversations (
 1. **Slack Event** → `/slack/events` endpoint
 2. **Bot Detection** → Determine which bot (Duck or Goose) by trying both signing secrets
 3. **Signature Verification** → Security check - reject if neither signing secret works
-4. **Event Deduplication** → Skip if already processed
-5. **DM Check** → Only respond if message is in a DM channel
-6. **Rate Limit Check** → Block if user exceeded 500/hour (shared across both bots)
-7. **Get User Info** → Fetch display name from Slack API using the appropriate bot's client
-8. **AI Response** → Call OpenAI with conversation history + bot-specific system prompt
-9. **Save to DB** → Store message/response pair with `bot_type` tag
-10. **Send Response** → Post to Slack using the appropriate bot's client
+4. **Event Deduplication** → Skip if (event_id, bot_type, event_type) already processed
+5. **Response Check** → Determine if bot should respond based on context (DMs: always, channels/group DMs: only if @mentioned)
+6. **Context Extraction** → Get channel_id, thread_ts, message_ts for conversation tracking
+7. **Rate Limit Check** → Block if user exceeded 500/hour (shared across both bots)
+8. **Get User Info** → Fetch display name from Slack API using the appropriate bot's client
+9. **AI Response** → Call OpenAI with conversation history + bot-specific system prompt
+10. **Save to DB** → Store message/response pair with `bot_type` and context parameters
+11. **Send Response** → Post to Slack using the appropriate bot's client (threaded for channels only)
 
 ## Environment Variables
 
@@ -122,7 +131,8 @@ CREATE TABLE conversations (
 ### Threading Behavior
 - **Channels**: Responses are threaded to the original message
 - **DMs**: No threading (direct responses)
-- Thread ID is used as conversation key for context
+- **Group DMs**: No threading (direct responses)
+- Thread ID is used as conversation key for context in channels
 
 ### Error Handling
 - Graceful fallbacks for API failures (Slack, OpenAI)
@@ -136,10 +146,13 @@ CREATE TABLE conversations (
 ## Usage Patterns
 
 ### For Users
-- DM **@Duck** for friendly, supportive tutoring
-- DM **@Goose** for objective, factual tutoring
-- Use `clear` command in DM to reset conversation history (per bot)
+- DM **@Duck** for friendly, supportive tutoring (1:1 conversation)
+- DM **@Goose** for objective, factual tutoring (1:1 conversation)
+- **@mention @Duck** or **@Goose** in channels for threaded responses
+- **@mention @Duck** or **@Goose** in group DMs for direct responses
+- Use `clear` command in DM to reset conversation history (per bot, per context)
 - Each bot maintains a separate conversation history
+- Bots do not see each other's responses - each maintains isolated conversation context
 
 ### For Admins
 - Use `delete_conversations.py "User Name"` to clear specific user's data
