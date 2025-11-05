@@ -350,7 +350,7 @@ async def slack_events(request: Request):
         # TEMPORARY DEBUG LOGGING - TODO: REMOVE AFTER DIAGNOSIS
         print(f"[DEBUG] EVENT RECEIVED: bot={bot_type}, event_id={event_id}, event_type={event_type}, channel={channel_id}")
 
-        bot_event_key = (event_id, bot_type)  # Combine event_id + bot_type
+        bot_event_key = (event_id, bot_type, event_type)  # Combine event_id + bot_type + event_type
         if event_id and bot_event_key in processed_events:
             print(f"[DEBUG] SKIPPED (deduplicated): {bot_event_key}")
             return {"status": "ok"}
