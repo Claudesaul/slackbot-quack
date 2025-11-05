@@ -38,6 +38,19 @@ duck_client = WebClient(token=SLACK_BOT_TOKEN_DUCK)
 goose_client = WebClient(token=SLACK_BOT_TOKEN_GOOSE)
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Get bot user IDs (for mention detection in group DMs)
+try:
+    duck_auth = duck_client.auth_test()
+    DUCK_USER_ID = duck_auth.get("user_id")
+except:
+    DUCK_USER_ID = None
+
+try:
+    goose_auth = goose_client.auth_test()
+    GOOSE_USER_ID = goose_auth.get("user_id")
+except:
+    GOOSE_USER_ID = None
+
 # Rate limiting: 500 messages per hour per user
 user_requests = {}
 
@@ -92,10 +105,58 @@ def detect_bot_from_signature(body: bytes, timestamp: str, signature: str) -> st
     else:
         return None
 
-def get_bot_response(message: str, user_id: str, bot_type: str, system_prompt: str, user_name: str = None) -> str:
+def should_respond_to_event(event: dict, channel_id: str, bot_user_id: str = None) -> bool:
+    """Determine if bot should respond to this event"""
+    event_type = event.get('type')
+    text = event.get('text', '')
+
+    # DMs - always respond (1:1 conversation)
+    if channel_id.startswith('D'):
+        return True
+
+    # Group DMs - only if bot is @mentioned
+    if channel_id.startswith('G'):
+        # Check if bot is mentioned in the text
+        if bot_user_id and f'<@{bot_user_id}>' in text:
+            return True
+        return False
+
+    # Channels - only if mentioned (app_mention event)
+    if channel_id.startswith('C'):
+        return event_type == 'app_mention'
+
+    return False
+
+def get_conversation_context(event: dict):
+    """Extract conversation context from Slack event"""
+    channel_id = event['channel']
+    user_id = event.get('user')
+    thread_ts = event.get('thread_ts')  # None for non-threaded messages
+    message_ts = event.get('ts')
+
+    # For top-level channel messages (mentions), the message itself becomes the thread root
+    if channel_id.startswith('C') and not thread_ts:
+        thread_ts = message_ts
+
+    # For DMs: use user_id as db_channel_id for consistency (backward compatible)
+    # This ensures old and new DM conversations use the same identifier
+    db_channel_id = user_id if channel_id.startswith('D') else channel_id
+
+    return channel_id, db_channel_id, thread_ts, message_ts
+
+def get_bot_response(
+    message: str,
+    user_id: str,
+    bot_type: str,
+    system_prompt: str,
+    user_name: str = None,
+    channel_id: str = None,
+    thread_ts: str = None
+) -> str:
+    """Generate AI response with conversation history"""
     try:
-        # Get conversation history for this user and bot
-        history = get_conversation_history(user_id, bot_type)
+        # Get conversation history for this user, bot, and context
+        history = get_conversation_history(user_id, bot_type, channel_id, thread_ts)
 
         # Build messages with history
         prompt = system_prompt
@@ -121,12 +182,33 @@ def get_bot_response(message: str, user_id: str, bot_type: str, system_prompt: s
     except:
         return "Something went wrong. Could you try asking your question again?"
 
-def handle_message(user_id: str, channel_id: str, text: str, bot_type: str, slack_client: WebClient, system_prompt: str, bot_name: str):
-    """Generic message handler for both Duck and Goose bots"""
-    # Check for clear command
-    if text.strip().lower() == "clear":
-        deleted_count = reset_conversation(user_id, bot_type)
-        response_text = f"{bot_name} I've cleared our conversation history. Ready for a fresh start!"
+def handle_message(
+    user_id: str,
+    channel_id: str,
+    text: str,
+    bot_type: str,
+    slack_client: WebClient,
+    system_prompt: str,
+    bot_name: str,
+    db_channel_id: str = None,
+    thread_ts: str = None,
+    message_ts: str = None
+):
+    """Generic message handler for both Duck and Goose bots
+
+    Args:
+        channel_id: Original Slack channel ID (D*, C*, G*) - used for logic checks
+        db_channel_id: Channel ID for database storage (user_id for DMs, channel_id for others)
+    """
+    # Use db_channel_id for database operations, channel_id for logic checks
+    if db_channel_id is None:
+        db_channel_id = channel_id
+
+    # Check for clear command (only in DMs)
+    if text.strip().lower() == "clear" and channel_id.startswith('D'):
+        # Only clear the DM context, not channel or group DM histories
+        deleted_count = reset_conversation(user_id, bot_type, db_channel_id, thread_ts)
+        response_text = f"{bot_name} I've cleared our DM conversation history. Ready for a fresh start!"
         try:
             slack_client.chat_postMessage(
                 channel=channel_id,
@@ -140,10 +222,15 @@ def handle_message(user_id: str, channel_id: str, text: str, bot_type: str, slac
     if is_rate_limited(user_id):
         rate_limit_msg = f"{bot_name} Take a break and think about the questions that have been asked. What have you tried so far?"
         try:
-            slack_client.chat_postMessage(
-                channel=channel_id,
-                text=rate_limit_msg
-            )
+            post_params = {
+                "channel": channel_id,
+                "text": rate_limit_msg
+            }
+            # Only thread in channels, not DMs or group DMs
+            if channel_id.startswith('C') and thread_ts:
+                post_params["thread_ts"] = thread_ts
+
+            slack_client.chat_postMessage(**post_params)
         except:
             pass
         return
@@ -156,18 +243,24 @@ def handle_message(user_id: str, channel_id: str, text: str, bot_type: str, slac
     except:
         user_name = f"User_{user_id[-4:]}"
 
-    # Get AI response
-    response = get_bot_response(text, user_id, bot_type, system_prompt, user_name)
+    # Get AI response with context (use db_channel_id for database lookup)
+    response = get_bot_response(text, user_id, bot_type, system_prompt, user_name, db_channel_id, thread_ts)
 
-    # Save conversation to database
-    save_conversation(user_id, user_name, text, response, bot_type)
+    # Save conversation to database with context (use db_channel_id for storage)
+    save_conversation(user_id, user_name, text, response, bot_type, db_channel_id, thread_ts, message_ts)
 
-    # Send to Slack
+    # Send to Slack (threaded ONLY for channels, not for DMs or group DMs)
     try:
-        slack_client.chat_postMessage(
-            channel=channel_id,
-            text=response
-        )
+        post_params = {
+            "channel": channel_id,
+            "text": response
+        }
+
+        # Only use threading for channels (C*), not for DMs (D*) or group DMs (G*)
+        if channel_id.startswith('C') and thread_ts:
+            post_params["thread_ts"] = thread_ts
+
+        slack_client.chat_postMessage(**post_params)
     except:
         pass
 
@@ -244,18 +337,35 @@ async def slack_events(request: Request):
             if len(processed_events) > 1000:
                 processed_events.clear()
 
-        if event.get("type") == "message" and not event.get("bot_id"):
+        event_type = event.get("type")
+
+        # Handle both regular messages and app mentions
+        if (event_type == "message" or event_type == "app_mention") and not event.get("bot_id"):
             user_id = event.get("user")
             channel_id = event.get("channel")
             text = event.get("text", "")
 
-            # Only respond to DMs (channel_id starts with 'D')
-            if channel_id.startswith('D'):
+            # Get the appropriate bot user ID
+            bot_user_id = DUCK_USER_ID if bot_type == 'duck' else GOOSE_USER_ID
+
+            # Check if we should respond to this event
+            if should_respond_to_event(event, channel_id, bot_user_id):
+                # Extract conversation context
+                channel_id, db_channel_id, thread_ts, message_ts = get_conversation_context(event)
+
                 # Route to appropriate bot handler
                 if bot_type == 'duck':
-                    handle_message(user_id, channel_id, text, 'duck', duck_client, DUCK_PROMPT, "Quack!")
+                    handle_message(
+                        user_id, channel_id, text, 'duck',
+                        duck_client, DUCK_PROMPT, "Quack!",
+                        db_channel_id, thread_ts, message_ts
+                    )
                 elif bot_type == 'goose':
-                    handle_message(user_id, channel_id, text, 'goose', goose_client, GOOSE_PROMPT, "Honk!")
+                    handle_message(
+                        user_id, channel_id, text, 'goose',
+                        goose_client, GOOSE_PROMPT, "Honk!",
+                        db_channel_id, thread_ts, message_ts
+                    )
 
     return {"status": "ok"}
 

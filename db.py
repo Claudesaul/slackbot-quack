@@ -13,11 +13,16 @@ class Conversation(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, nullable=False)
     user_name = Column(String)
-    thread_id = Column(String, nullable=False)
+    thread_id = Column(String, nullable=False)  # Keep for backward compatibility
     message = Column(Text, nullable=False)
     response = Column(Text, nullable=False)
     bot_type = Column(String, nullable=False, default='duck')
     timestamp = Column(DateTime, default=func.now())
+
+    # New columns for multi-context support (DMs, channels, group DMs)
+    channel_id = Column(String)  # Slack channel ID (D*, C*, G*)
+    thread_ts = Column(String)   # Slack thread timestamp
+    message_ts = Column(String)  # Slack message timestamp
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./conversations.db")
 
@@ -31,7 +36,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     Base.metadata.create_all(bind=engine)
 
-    # Migration: Add bot_type column if it doesn't exist
+    # Migration: Add missing columns if they don't exist
     from sqlalchemy import text, inspect
     inspector = inspect(engine)
 
@@ -46,6 +51,31 @@ def init_db():
                 conn.commit()
                 print("Migration: Added bot_type column to conversations table")
 
+        # Add new context columns if missing
+        with engine.connect() as conn:
+            if 'channel_id' not in columns:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN channel_id VARCHAR"))
+                conn.commit()
+                print("Migration: Added channel_id column to conversations table")
+
+                # Backfill: Set channel_id = user_id for old DM conversations
+                # This ensures backward compatibility with existing data
+                conn.execute(text(
+                    "UPDATE conversations SET channel_id = user_id WHERE channel_id IS NULL"
+                ))
+                conn.commit()
+                print("Migration: Backfilled channel_id for existing conversations")
+
+            if 'thread_ts' not in columns:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN thread_ts VARCHAR"))
+                conn.commit()
+                print("Migration: Added thread_ts column to conversations table")
+
+            if 'message_ts' not in columns:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN message_ts VARCHAR"))
+                conn.commit()
+                print("Migration: Added message_ts column to conversations table")
+
 def get_db():
     db = SessionLocal()
     try:
@@ -53,17 +83,42 @@ def get_db():
     finally:
         db.close()
 
-def save_conversation(user_id: str, user_name: str, message: str, response: str, bot_type: str = 'duck'):
+def save_conversation(
+    user_id: str,
+    user_name: str,
+    message: str,
+    response: str,
+    bot_type: str = 'duck',
+    channel_id: str = None,
+    thread_ts: str = None,
+    message_ts: str = None
+):
+    """
+    Save a conversation to the database.
+
+    Args:
+        user_id: Slack user ID
+        user_name: User's display name
+        message: User's message
+        response: Bot's response
+        bot_type: 'duck' or 'goose'
+        channel_id: Slack channel ID (D* for DM, C* for channel, G* for group DM)
+        thread_ts: Slack thread timestamp (None for non-threaded)
+        message_ts: Slack message timestamp
+    """
     db = SessionLocal()
     try:
         # Save new conversation
         conversation = Conversation(
             user_id=user_id,
             user_name=user_name,
-            thread_id=user_id,  # Use user_id as thread_id for DMs
+            thread_id=thread_ts or user_id,  # Use thread_ts if available, else user_id (backward compat)
             message=message,
             response=response,
-            bot_type=bot_type
+            bot_type=bot_type,
+            channel_id=channel_id or user_id,  # Fallback to user_id for old DMs
+            thread_ts=thread_ts,
+            message_ts=message_ts
         )
         db.add(conversation)
         db.commit()
@@ -83,33 +138,82 @@ def save_conversation(user_id: str, user_name: str, message: str, response: str,
     finally:
         db.close()
 
-def get_conversation_history(user_id: str, bot_type: str = 'duck') -> list:
+def get_conversation_history(
+    user_id: str,
+    bot_type: str = 'duck',
+    channel_id: str = None,
+    thread_ts: str = None
+) -> list:
+    """
+    Get conversation history for a specific context.
+
+    Args:
+        user_id: Slack user ID
+        bot_type: 'duck' or 'goose'
+        channel_id: Slack channel ID (optional, for context filtering)
+        thread_ts: Slack thread timestamp (optional, for thread isolation)
+
+    Returns:
+        List of (message, response) tuples in chronological order
+    """
     db = SessionLocal()
     try:
-        conversations = db.query(Conversation.message, Conversation.response)\
+        query = db.query(Conversation.message, Conversation.response)\
             .filter(Conversation.user_id == user_id)\
-            .filter(Conversation.bot_type == bot_type)\
-            .order_by(Conversation.timestamp.desc())\
-            .limit(30)\
-            .all()
+            .filter(Conversation.bot_type == bot_type)
+
+        # Filter by context if provided
+        if channel_id:
+            query = query.filter(Conversation.channel_id == channel_id)
+
+            if thread_ts:  # Channel thread - only this specific thread
+                query = query.filter(Conversation.thread_ts == thread_ts)
+            else:  # DM or group DM (non-threaded)
+                query = query.filter(Conversation.thread_ts.is_(None))
+
+        conversations = query.order_by(Conversation.timestamp.desc()).limit(30).all()
 
         # Return in chronological order (oldest first)
         return [(conv.message, conv.response) for conv in reversed(conversations)]
     finally:
         db.close()
 
-def reset_conversation(user_id: str, bot_type: str = 'duck') -> int:
+def reset_conversation(
+    user_id: str,
+    bot_type: str = 'duck',
+    channel_id: str = None,
+    thread_ts: str = None
+) -> int:
+    """
+    Reset conversation history for a specific context.
+
+    Args:
+        user_id: Slack user ID
+        bot_type: 'duck' or 'goose'
+        channel_id: Slack channel ID (optional - if provided, only clears that context)
+        thread_ts: Slack thread timestamp (optional - for thread-specific clearing)
+
+    Returns:
+        Number of conversations deleted
+    """
     db = SessionLocal()
     try:
-        deleted_count = db.query(Conversation)\
+        query = db.query(Conversation)\
             .filter(Conversation.user_id == user_id)\
-            .filter(Conversation.bot_type == bot_type)\
-            .count()
+            .filter(Conversation.bot_type == bot_type)
 
-        db.query(Conversation)\
-            .filter(Conversation.user_id == user_id)\
-            .filter(Conversation.bot_type == bot_type)\
-            .delete()
+        # Filter by context if provided
+        if channel_id:
+            query = query.filter(Conversation.channel_id == channel_id)
+
+            if thread_ts:
+                query = query.filter(Conversation.thread_ts == thread_ts)
+            else:
+                # If no thread_ts, clear non-threaded messages in this channel
+                query = query.filter(Conversation.thread_ts.is_(None))
+
+        deleted_count = query.count()
+        query.delete()
 
         db.commit()
         return deleted_count
