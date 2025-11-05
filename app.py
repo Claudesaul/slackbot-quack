@@ -332,12 +332,13 @@ async def slack_events(request: Request):
     if event_data.get("type") == "event_callback":
         event = event_data.get("event", {})
 
-        # Event deduplication
+        # Event deduplication (bot-specific to allow both bots to respond to same event)
         event_id = event.get("client_msg_id") or event.get("ts")
-        if event_id and event_id in processed_events:
+        bot_event_key = (event_id, bot_type)  # Combine event_id + bot_type
+        if event_id and bot_event_key in processed_events:
             return {"status": "ok"}
         if event_id:
-            processed_events.add(event_id)
+            processed_events.add(bot_event_key)
             if len(processed_events) > 1000:
                 processed_events.clear()
 
