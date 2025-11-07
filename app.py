@@ -301,6 +301,15 @@ def handle_message(
                     msg_preview = '\n'.join(line for line in msg_preview.split('\n') if line.strip())
                     if len(message) > 800:
                         msg_preview += "..."
+
+                    # Balance code blocks to prevent formatting breaks across Slack message chunks
+                    if msg_preview.count('```') % 2 != 0:
+                        last_backtick_pos = msg_preview.rfind('```')
+                        msg_preview = msg_preview[:last_backtick_pos].rstrip()
+                        # Re-add ellipsis if the message was truncated
+                        if len(message) > 800:
+                            msg_preview += "..."
+
                     response_lines.append(f"*{i}. {user_name}* - {slack_date}")
                     response_lines.append(f"```{msg_preview}```")
                     response_lines.append("")  # Blank line between queries

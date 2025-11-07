@@ -115,6 +115,7 @@ CREATE TABLE conversations (
   - Maximum: 100 queries (returns error if exceeded)
   - Shows timestamps (auto-converted to user's timezone), usernames, and messages
   - Messages displayed in code blocks, truncated at 800 characters, with empty lines removed
+  - Automatically balances markdown code blocks to prevent formatting breaks when Slack chunks large responses
   - Excludes admin users from results
   - Displays oldest to newest (chronological order)
   - Bot-specific
