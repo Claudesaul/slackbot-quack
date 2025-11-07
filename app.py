@@ -240,7 +240,8 @@ def handle_message(
 
         # Stats command
         if text_lower == "stats":
-            stats = get_bot_stats(bot_type)
+            # Exclude admin users from stats
+            stats = get_bot_stats(bot_type, exclude_user_ids=ADMIN_USER_IDS)
             bot_name_display = "Duck" if bot_type == 'duck' else "Goose"
 
             # Format dates (Slack auto-timezone format - shows in each user's local timezone)
@@ -286,7 +287,7 @@ def handle_message(
                     unix_ts = int(timestamp.timestamp())
                     slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
                     # Truncate long messages
-                    msg_preview = message[:100] + "..." if len(message) > 100 else message
+                    msg_preview = message[:250] + "..." if len(message) > 250 else message
                     response_lines.append(f"{slack_date} - {user_name}: {msg_preview}")
 
                 response_text = "\n".join(response_lines)

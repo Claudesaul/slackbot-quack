@@ -255,12 +255,13 @@ def delete_conversations_by_user_name(user_name: str) -> int:
     finally:
         db.close()
 
-def get_bot_stats(bot_type: str) -> dict:
+def get_bot_stats(bot_type: str, exclude_user_ids: list = None) -> dict:
     """
     Get statistics for a specific bot.
 
     Args:
         bot_type: 'duck' or 'goose'
+        exclude_user_ids: List of user IDs to exclude (e.g., admins)
 
     Returns:
         Dictionary with comprehensive statistics
@@ -269,37 +270,50 @@ def get_bot_stats(bot_type: str) -> dict:
     try:
         from sqlalchemy import func as sql_func
 
+        # Base query filters
+        base_query = db.query(Conversation).filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            base_query = base_query.filter(~Conversation.user_id.in_(exclude_user_ids))
+
         # Total tokens
         total_tokens = db.query(sql_func.sum(Conversation.tokens_used))\
-            .filter(Conversation.bot_type == bot_type)\
-            .scalar() or 0
+            .filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            total_tokens = total_tokens.filter(~Conversation.user_id.in_(exclude_user_ids))
+        total_tokens = total_tokens.scalar() or 0
 
         # Total messages
-        total_messages = db.query(Conversation)\
-            .filter(Conversation.bot_type == bot_type)\
-            .count()
+        total_messages = base_query.count()
 
         # Unique users
         unique_users = db.query(sql_func.count(sql_func.distinct(Conversation.user_id)))\
-            .filter(Conversation.bot_type == bot_type)\
-            .scalar() or 0
+            .filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            unique_users = unique_users.filter(~Conversation.user_id.in_(exclude_user_ids))
+        unique_users = unique_users.scalar() or 0
 
         # Average tokens per message
         avg_tokens = total_tokens / total_messages if total_messages > 0 else 0
 
         # Average response length (characters)
         avg_response_length = db.query(sql_func.avg(sql_func.length(Conversation.response)))\
-            .filter(Conversation.bot_type == bot_type)\
-            .scalar() or 0
+            .filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            avg_response_length = avg_response_length.filter(~Conversation.user_id.in_(exclude_user_ids))
+        avg_response_length = avg_response_length.scalar() or 0
 
         # Date range
         earliest = db.query(sql_func.min(Conversation.timestamp))\
-            .filter(Conversation.bot_type == bot_type)\
-            .scalar()
+            .filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            earliest = earliest.filter(~Conversation.user_id.in_(exclude_user_ids))
+        earliest = earliest.scalar()
 
         latest = db.query(sql_func.max(Conversation.timestamp))\
-            .filter(Conversation.bot_type == bot_type)\
-            .scalar()
+            .filter(Conversation.bot_type == bot_type)
+        if exclude_user_ids:
+            latest = latest.filter(~Conversation.user_id.in_(exclude_user_ids))
+        latest = latest.scalar()
 
         # Estimated cost (OpenAI GPT-4o pricing: $2.50 per 1M input tokens, $10 per 1M output tokens)
         # Using rough estimate of 40% input, 60% output
