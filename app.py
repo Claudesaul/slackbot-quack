@@ -292,14 +292,16 @@ def handle_message(
             if not queries:
                 response_text = f"No student queries found for {bot_type.capitalize()} bot."
             else:
-                response_lines = [f"*Recent Student Queries (Last {len(queries)})*", "━━━━━━━━━━━━━━━━━━━━━━━━"]
-                for timestamp, user_name, message in queries:
+                response_lines = [f"*Recent Student Queries (Last {len(queries)})*", "━━━━━━━━━━━━━━━━━━━━━━━━", ""]
+                for i, (timestamp, user_name, message) in enumerate(queries, 1):
                     # Use Slack's auto-timezone formatting (shows in each user's local timezone)
                     unix_ts = int(timestamp.timestamp())
                     slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
                     # Truncate long messages
                     msg_preview = message[:250] + "..." if len(message) > 250 else message
-                    response_lines.append(f"{slack_date} - {user_name}: {msg_preview}")
+                    response_lines.append(f"*{i}.* {slack_date} - *{user_name}*")
+                    response_lines.append(f"{msg_preview}")
+                    response_lines.append("")  # Blank line between queries
 
                 response_text = "\n".join(response_lines)
 
