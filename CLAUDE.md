@@ -36,7 +36,8 @@ CREATE TABLE conversations (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     channel_id TEXT,        -- Slack channel ID (D* for DMs, C* for channels, G* for group DMs)
     thread_ts TEXT,         -- Slack thread timestamp for threaded conversations
-    message_ts TEXT         -- Slack message timestamp
+    message_ts TEXT,        -- Slack message timestamp
+    tokens_used INTEGER DEFAULT 0  -- OpenAI token usage tracking
 );
 ```
 
@@ -91,11 +92,33 @@ CREATE TABLE conversations (
 - **Mention detection** - Uses bot user IDs to detect @mentions in group DMs and channels
 
 ### Special Commands
+
+**User Commands:**
 - **`clear`** (DM only) - Deletes conversation history for the current bot in the current context
   - Calls `reset_conversation(user_id, bot_type, channel_id, thread_ts)` from db.py
   - If you clear Duck's history, Goose's history remains intact and vice versa
   - Context-aware: only clears history for the specific DM, thread, or channel where command is issued
   - Provides confirmation message
+
+**Admin Commands** (DM only, requires user ID in `ADMIN_USER_IDS`):
+- **`stats`** - Shows comprehensive statistics for the current bot
+  - Total tokens used (from OpenAI API)
+  - Estimated cost (based on GPT-4o pricing)
+  - Total messages and unique students
+  - Average tokens per message and response length
+  - First and latest message timestamps
+  - Excludes admin users from all statistics
+  - Bot-specific (Duck and Goose have separate stats)
+
+- **`query`** or **`query N`** - Shows recent student queries for the current bot
+  - Default: last 10 queries
+  - Specify number: `query 30` shows last 30 queries
+  - Maximum: 100 queries (returns error if exceeded)
+  - Shows timestamps (auto-converted to user's timezone), usernames, and messages
+  - Messages truncated at 250 characters
+  - Excludes admin users from results
+  - Displays oldest to newest (chronological order)
+  - Bot-specific
 
 ## Message Flow
 
@@ -105,11 +128,12 @@ CREATE TABLE conversations (
 4. **Event Deduplication** → Skip if (event_id, bot_type, event_type) already processed
 5. **Response Check** → Determine if bot should respond based on context (DMs: always, channels/group DMs: only if @mentioned)
 6. **Context Extraction** → Get channel_id, thread_ts, message_ts for conversation tracking
-7. **Rate Limit Check** → Block if user exceeded 500/hour (shared across both bots)
-8. **Get User Info** → Fetch display name from Slack API using the appropriate bot's client
-9. **AI Response** → Call OpenAI with conversation history + bot-specific system prompt
-10. **Save to DB** → Store message/response pair with `bot_type` and context parameters
-11. **Send Response** → Post to Slack using the appropriate bot's client (threaded for channels only)
+7. **Admin Command Check** → If admin user in DM, check for `stats` or `query` commands
+8. **Rate Limit Check** → Block if user exceeded 500/hour (shared across both bots)
+9. **Get User Info** → Fetch display name from Slack API using the appropriate bot's client
+10. **AI Response** → Call OpenAI with conversation history + bot-specific system prompt, capture token usage
+11. **Save to DB** → Store message/response pair with `bot_type`, context parameters, and `tokens_used`
+12. **Send Response** → Post to Slack using the appropriate bot's client (threaded for channels only)
 
 ## Environment Variables
 
@@ -123,6 +147,7 @@ CREATE TABLE conversations (
 
 ### Shared
 - `OPENAI_API_KEY` - OpenAI API access (shared by both bots)
+- `ADMIN_USER_IDS` - Comma-separated Slack user IDs for admin access to stats and query commands (optional)
 - `DATABASE_URL` - Database connection string (auto-provided by Railway, defaults to SQLite locally)
 - `PORT` - Server port (default: 3000)
 
@@ -155,9 +180,13 @@ CREATE TABLE conversations (
 - Bots do not see each other's responses - each maintains isolated conversation context
 
 ### For Admins
-- Use `delete_conversations.py "User Name"` to clear specific user's data
-- Monitor database size (`conversations.db`)
-- Check rate limiting if users report issues
+- **DM Commands** (requires user ID in `ADMIN_USER_IDS` environment variable):
+  - Type `stats` in DM with Duck or Goose to see bot-specific usage statistics
+  - Type `query` or `query N` in DM to see recent student queries (up to 100)
+  - Admin messages excluded from all statistics and query results
+- **CLI Tool**: Use `delete_conversations.py "User Name"` to clear specific user's data
+- **Monitoring**: Check database size and rate limiting if users report issues
+- **Token Tracking**: Automatic migration estimates tokens for existing conversations, new conversations capture actual token usage from OpenAI API
 
 ## Security Features
 - **Webhook signature verification** prevents unauthorized requests

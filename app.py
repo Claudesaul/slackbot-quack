@@ -275,6 +275,17 @@ def handle_message(
             if len(parts) > 1 and parts[1].isdigit():
                 limit = int(parts[1])
 
+            # Check if limit exceeds maximum
+            if limit > 100:
+                try:
+                    slack_client.chat_postMessage(
+                        channel=channel_id,
+                        text="Maximum query limit is 100. Please request 100 or fewer queries."
+                    )
+                except:
+                    pass
+                return
+
             # Exclude admin users from query results
             queries = get_recent_queries(bot_type, limit, exclude_user_ids=ADMIN_USER_IDS)
 

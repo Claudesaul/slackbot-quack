@@ -100,6 +100,7 @@ SLACK_SIGNING_SECRET_GOOSE=your-goose-signing-secret-here
 
 # Shared
 OPENAI_API_KEY=sk-proj-your-openai-key-here
+ADMIN_USER_IDS=U01ABC123,U02DEF456  # Optional: Comma-separated admin Slack user IDs
 PORT=3000
 ```
 
@@ -118,6 +119,11 @@ PORT=3000
 - Create new secret key
 - Format: `sk-proj-abc123...`
 - Ensure billing is enabled on your OpenAI account
+
+**ADMIN_USER_IDS:** (Optional - for admin commands)
+- Get Slack user ID: Open Slack → Click profile → Three dots → "Copy member ID"
+- Format: `U01ABC123,U02DEF456` (comma-separated, no spaces)
+- Enables `stats` and `query` commands in DMs for specified users
 
 ### Step 6: Test Locally with ngrok
 
@@ -171,6 +177,7 @@ Both bots use the same webhook URL. The app detects which bot received the messa
 
 **Special Commands:**
 - Send `clear` in DM to reset conversation history for that specific bot
+- **Admin commands** (requires ADMIN_USER_IDS setup): `stats` for usage statistics, `query N` for recent student queries
 
 ---
 
@@ -204,6 +211,7 @@ SLACK_SIGNING_SECRET_DUCK=your-duck-signing-secret
 SLACK_BOT_TOKEN_GOOSE=xoxb-your-goose-bot-token
 SLACK_SIGNING_SECRET_GOOSE=your-goose-signing-secret
 OPENAI_API_KEY=sk-proj-your-openai-key
+ADMIN_USER_IDS=U01ABC123,U02DEF456  # Optional: for admin stats/query commands
 PORT=3000
 ```
 
@@ -673,6 +681,31 @@ railway logs
 
 **Duck Response:**
 > Quack! I've cleared our conversation history. Ready for a fresh start!
+
+**Admin types to Duck in DM:** `stats`
+
+**Duck Response:**
+> *Duck Bot Statistics*
+> ━━━━━━━━━━━━━━━━━━━━━━━━
+> *Total tokens used:* 1,234,567
+> *Estimated cost:* $7.85
+> *Total messages:* 456
+> *Unique students:* 23
+> *Avg tokens/message:* 2,707.4
+> *Avg response length:* 425 chars
+> *First message:* Oct 15, 2024 02:30 PM
+> *Latest message:* Nov 06, 2025 05:23 PM
+
+**Admin types to Goose in DM:** `query 5`
+
+**Goose Response:**
+> *Recent Student Queries (Last 5)*
+> ━━━━━━━━━━━━━━━━━━━━━━━━
+> Nov 06 at 9:45 AM - Alice: How do I use for loops?
+> Nov 06 at 10:23 AM - Bob: What's a dictionary?
+> Nov 06 at 11:15 AM - Carol: Explain recursion
+> Nov 06 at 2:30 PM - David: Help with lists
+> Nov 06 at 5:23 PM - Eve: What are tuples?
 
 ---
 
