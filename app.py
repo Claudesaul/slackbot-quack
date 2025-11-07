@@ -290,34 +290,57 @@ def handle_message(
 
             if not queries:
                 response_text = f"No student queries found for {bot_type.capitalize()} bot."
+                try:
+                    slack_client.chat_postMessage(
+                        channel=channel_id,
+                        text=response_text
+                    )
+                except:
+                    pass
             else:
-                response_lines = [f"*Recent Student Queries (Last {len(queries)})*", "━━━━━━━━━━━━━━━━━━━━━━━━", ""]
-                for i, (timestamp, user_name, message) in enumerate(queries, 1):
-                    # Use Slack's auto-timezone formatting (shows in each user's local timezone)
-                    unix_ts = int(timestamp.timestamp())
-                    slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
-                    # Collapse multiple newlines and truncate message
-                    msg_preview = message[:800]
-                    msg_preview = '\n'.join(line for line in msg_preview.split('\n') if line.strip())
-                    if len(message) > 800:
-                        msg_preview += "..."
+                # Send header
+                header_text = f"*Recent Student Queries (Last {len(queries)})*\n━━━━━━━━━━━━━━━━━━━━━━━━"
+                try:
+                    slack_client.chat_postMessage(
+                        channel=channel_id,
+                        text=header_text
+                    )
+                except:
+                    pass
 
-                    # Remove triple backticks to prevent conflicts with our code block wrapper
-                    msg_preview = msg_preview.replace('```', '')
+                # Send queries in batches of 5 to prevent Slack from splitting messages
+                batch_size = 5
+                for batch_start in range(0, len(queries), batch_size):
+                    batch_queries = queries[batch_start:batch_start + batch_size]
+                    batch_lines = []
 
-                    response_lines.append(f"*{i}. {user_name}* - {slack_date}")
-                    response_lines.append(f"```{msg_preview}```")
-                    response_lines.append("")  # Blank line between queries
+                    for i, (timestamp, user_name, message) in enumerate(batch_queries, start=batch_start + 1):
+                        # Use Slack's auto-timezone formatting (shows in each user's local timezone)
+                        unix_ts = int(timestamp.timestamp())
+                        slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
 
-                response_text = "\n".join(response_lines)
+                        # Collapse multiple newlines and truncate message
+                        msg_preview = message[:800]
+                        msg_preview = '\n'.join(line for line in msg_preview.split('\n') if line.strip())
+                        if len(message) > 800:
+                            msg_preview += "..."
 
-            try:
-                slack_client.chat_postMessage(
-                    channel=channel_id,
-                    text=response_text
-                )
-            except:
-                pass
+                        # Remove triple backticks to prevent conflicts with our code block wrapper
+                        msg_preview = msg_preview.replace('```', '')
+
+                        batch_lines.append(f"*{i}. {user_name}* - {slack_date}")
+                        batch_lines.append(f"```{msg_preview}```")
+                        batch_lines.append("")  # Blank line between queries
+
+                    batch_text = "\n".join(batch_lines)
+                    try:
+                        slack_client.chat_postMessage(
+                            channel=channel_id,
+                            text=batch_text
+                        )
+                    except:
+                        pass
+
             return
 
     # Check for clear command (only in DMs)

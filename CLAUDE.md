@@ -116,6 +116,7 @@ CREATE TABLE conversations (
   - Shows timestamps (auto-converted to user's timezone), usernames, and messages
   - Messages displayed in code blocks, truncated at 800 characters, with empty lines removed
   - Triple backticks (```) stripped from messages to prevent conflicts with code block formatting
+  - Queries sent in batches of 5 per message to prevent Slack from splitting messages mid-code-block
   - Excludes admin users from results
   - Displays oldest to newest (chronological order)
   - Bot-specific
