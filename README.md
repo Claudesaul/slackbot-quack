@@ -688,7 +688,6 @@ railway logs
 > *Duck Bot Statistics*
 > ━━━━━━━━━━━━━━━━━━━━━━━━
 > *Total tokens used:* 1,234,567
-> *Estimated cost:* $7.85
 > *Total messages:* 456
 > *Unique students:* 23
 > *Avg tokens/message:* 2,707.4
@@ -701,11 +700,21 @@ railway logs
 **Goose Response:**
 > *Recent Student Queries (Last 5)*
 > ━━━━━━━━━━━━━━━━━━━━━━━━
-> Nov 06 at 9:45 AM - Alice: How do I use for loops?
-> Nov 06 at 10:23 AM - Bob: What's a dictionary?
-> Nov 06 at 11:15 AM - Carol: Explain recursion
-> Nov 06 at 2:30 PM - David: Help with lists
-> Nov 06 at 5:23 PM - Eve: What are tuples?
+>
+> *1. Alice* - Nov 06 at 9:45 AM
+> How do I use for loops?
+>
+> *2. Bob* - Nov 06 at 10:23 AM
+> What's a dictionary?
+>
+> *3. Carol* - Nov 06 at 11:15 AM
+> Explain recursion
+>
+> *4. David* - Nov 06 at 2:30 PM
+> Help with lists
+>
+> *5. Eve* - Nov 06 at 5:23 PM
+> What are tuples?
 
 ---
 

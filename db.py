@@ -315,19 +315,12 @@ def get_bot_stats(bot_type: str, exclude_user_ids: list = None) -> dict:
             latest = latest.filter(~Conversation.user_id.in_(exclude_user_ids))
         latest = latest.scalar()
 
-        # Estimated cost (OpenAI GPT-4o pricing: $2.50 per 1M input tokens, $10 per 1M output tokens)
-        # Using rough estimate of 40% input, 60% output
-        input_tokens = total_tokens * 0.4
-        output_tokens = total_tokens * 0.6
-        estimated_cost = (input_tokens / 1_000_000 * 2.50) + (output_tokens / 1_000_000 * 10.00)
-
         return {
             "total_tokens": int(total_tokens),
             "total_messages": total_messages,
             "unique_users": unique_users,
             "avg_tokens": round(avg_tokens, 1),
             "avg_response_length": round(avg_response_length, 0),
-            "estimated_cost": round(estimated_cost, 2),
             "earliest_date": earliest,
             "latest_date": latest
         }

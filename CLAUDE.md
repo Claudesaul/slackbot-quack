@@ -103,7 +103,6 @@ CREATE TABLE conversations (
 **Admin Commands** (DM only, requires user ID in `ADMIN_USER_IDS`):
 - **`stats`** - Shows comprehensive statistics for the current bot
   - Total tokens used (from OpenAI API)
-  - Estimated cost (based on GPT-4o pricing)
   - Total messages and unique students
   - Average tokens per message and response length
   - First and latest message timestamps

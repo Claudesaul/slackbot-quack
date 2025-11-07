@@ -251,7 +251,6 @@ def handle_message(
             response_text = f"""*{bot_name_display} Bot Statistics*
 ━━━━━━━━━━━━━━━━━━━━━━━━
 *Total tokens used:* {stats['total_tokens']:,}
-*Estimated cost:* ${stats['estimated_cost']:.2f}
 *Total messages:* {stats['total_messages']:,}
 *Unique students:* {stats['unique_users']}
 *Avg tokens/message:* {stats['avg_tokens']}
@@ -297,9 +296,11 @@ def handle_message(
                     # Use Slack's auto-timezone formatting (shows in each user's local timezone)
                     unix_ts = int(timestamp.timestamp())
                     slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
-                    # Truncate long messages
+                    # Truncate and clean message (remove markdown formatting for readability)
                     msg_preview = message[:250] + "..." if len(message) > 250 else message
-                    response_lines.append(f"*{i}.* {slack_date} - *{user_name}*")
+                    # Escape markdown characters to prevent formatting conflicts
+                    msg_preview = msg_preview.replace('*', '\\*').replace('_', '\\_').replace('`', '\\`')
+                    response_lines.append(f"*{i}. {user_name}* - {slack_date}")
                     response_lines.append(f"{msg_preview}")
                     response_lines.append("")  # Blank line between queries
 
