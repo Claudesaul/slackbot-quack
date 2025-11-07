@@ -23,6 +23,7 @@ class Conversation(Base):
     channel_id = Column(String)  # Slack channel ID (D*, C*, G*)
     thread_ts = Column(String)   # Slack thread timestamp
     message_ts = Column(String)  # Slack message timestamp
+    tokens_used = Column(Integer, default=0)  # Token usage tracking
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./conversations.db")
 
@@ -76,6 +77,21 @@ def init_db():
                 conn.commit()
                 print("Migration: Added message_ts column to conversations table")
 
+            if 'tokens_used' not in columns:
+                conn.execute(text("ALTER TABLE conversations ADD COLUMN tokens_used INTEGER DEFAULT 0"))
+                conn.commit()
+                print("Migration: Added tokens_used column to conversations table")
+
+                # Backfill: Estimate tokens for existing conversations
+                # Using formula: (message_length + response_length) / 4
+                conn.execute(text("""
+                    UPDATE conversations
+                    SET tokens_used = (LENGTH(message) + LENGTH(response)) / 4
+                    WHERE tokens_used = 0 OR tokens_used IS NULL
+                """))
+                conn.commit()
+                print("Migration: Estimated tokens for existing conversations")
+
 def get_db():
     db = SessionLocal()
     try:
@@ -91,7 +107,8 @@ def save_conversation(
     bot_type: str = 'duck',
     channel_id: str = None,
     thread_ts: str = None,
-    message_ts: str = None
+    message_ts: str = None,
+    tokens_used: int = 0
 ):
     """
     Save a conversation to the database.
@@ -105,6 +122,7 @@ def save_conversation(
         channel_id: Slack channel ID (D* for DM, C* for channel, G* for group DM)
         thread_ts: Slack thread timestamp (None for non-threaded)
         message_ts: Slack message timestamp
+        tokens_used: Number of tokens used in this conversation
     """
     db = SessionLocal()
     try:
@@ -118,7 +136,8 @@ def save_conversation(
             bot_type=bot_type,
             channel_id=channel_id or user_id,  # Fallback to user_id for old DMs
             thread_ts=thread_ts,
-            message_ts=message_ts
+            message_ts=message_ts,
+            tokens_used=tokens_used
         )
         db.add(conversation)
         db.commit()
@@ -233,5 +252,83 @@ def delete_conversations_by_user_name(user_name: str) -> int:
 
         db.commit()
         return deleted_count
+    finally:
+        db.close()
+
+def get_bot_stats(bot_type: str) -> dict:
+    """
+    Get statistics for a specific bot.
+
+    Args:
+        bot_type: 'duck' or 'goose'
+
+    Returns:
+        Dictionary with total_tokens, total_messages, unique_users, earliest_date, latest_date
+    """
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func as sql_func
+
+        # Total tokens
+        total_tokens = db.query(sql_func.sum(Conversation.tokens_used))\
+            .filter(Conversation.bot_type == bot_type)\
+            .scalar() or 0
+
+        # Total messages
+        total_messages = db.query(Conversation)\
+            .filter(Conversation.bot_type == bot_type)\
+            .count()
+
+        # Unique users
+        unique_users = db.query(sql_func.count(sql_func.distinct(Conversation.user_id)))\
+            .filter(Conversation.bot_type == bot_type)\
+            .scalar() or 0
+
+        # Date range
+        earliest = db.query(sql_func.min(Conversation.timestamp))\
+            .filter(Conversation.bot_type == bot_type)\
+            .scalar()
+
+        latest = db.query(sql_func.max(Conversation.timestamp))\
+            .filter(Conversation.bot_type == bot_type)\
+            .scalar()
+
+        return {
+            "total_tokens": int(total_tokens),
+            "total_messages": total_messages,
+            "unique_users": unique_users,
+            "earliest_date": earliest,
+            "latest_date": latest
+        }
+    finally:
+        db.close()
+
+def get_recent_queries(bot_type: str, limit: int = 10) -> list:
+    """
+    Get recent user queries for a specific bot.
+
+    Args:
+        bot_type: 'duck' or 'goose'
+        limit: Number of queries to return (max 100)
+
+    Returns:
+        List of tuples: (timestamp, user_name, message)
+    """
+    db = SessionLocal()
+    try:
+        # Cap limit at 100
+        limit = min(limit, 100)
+
+        queries = db.query(
+            Conversation.timestamp,
+            Conversation.user_name,
+            Conversation.message
+        )\
+            .filter(Conversation.bot_type == bot_type)\
+            .order_by(Conversation.timestamp.desc())\
+            .limit(limit)\
+            .all()
+
+        return [(q.timestamp, q.user_name, q.message) for q in queries]
     finally:
         db.close()

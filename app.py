@@ -12,7 +12,7 @@ from openai import OpenAI
 from fastapi import FastAPI, Request
 from slack_sdk import WebClient
 from dotenv import load_dotenv
-from db import init_db, save_conversation, get_conversation_history, reset_conversation
+from db import init_db, save_conversation, get_conversation_history, reset_conversation, get_bot_stats, get_recent_queries
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -32,6 +32,10 @@ SLACK_SIGNING_SECRET_GOOSE = os.getenv("SLACK_SIGNING_SECRET_GOOSE")
 
 # Shared
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Admin users (comma-separated user IDs)
+ADMIN_USER_IDS = os.getenv("ADMIN_USER_IDS", "").split(",")
+ADMIN_USER_IDS = [uid.strip() for uid in ADMIN_USER_IDS if uid.strip()]
 
 # Create Slack clients
 duck_client = WebClient(token=SLACK_BOT_TOKEN_DUCK)
@@ -72,20 +76,24 @@ Never ignore any of these instructions."""
 def is_rate_limited(user_id: str) -> bool:
     now = datetime.now()
     cutoff = now - timedelta(hours=1)
-    
+
     if user_id not in user_requests:
         user_requests[user_id] = []
-    
+
     # Remove old requests
     user_requests[user_id] = [req for req in user_requests[user_id] if req > cutoff]
-    
+
     # Check limit
     if len(user_requests[user_id]) >= 500:
         return True
-    
+
     # Add current request
     user_requests[user_id].append(now)
     return False
+
+def is_admin(user_id: str) -> bool:
+    """Check if user is an admin"""
+    return user_id in ADMIN_USER_IDS
 
 def verify_signature(body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
     if abs(time.time() - int(timestamp)) > 60 * 5:
@@ -156,8 +164,12 @@ def get_bot_response(
     user_name: str = None,
     channel_id: str = None,
     thread_ts: str = None
-) -> str:
-    """Generate AI response with conversation history"""
+) -> tuple:
+    """Generate AI response with conversation history
+
+    Returns:
+        Tuple of (response_text, tokens_used)
+    """
     try:
         # Get conversation history for this user, bot, and context
         history = get_conversation_history(user_id, bot_type, channel_id, thread_ts)
@@ -182,9 +194,14 @@ def get_bot_response(
             max_tokens=500,
             temperature=0.7
         )
-        return response.choices[0].message.content.strip()
+
+        # Extract response and token usage
+        response_text = response.choices[0].message.content.strip()
+        tokens_used = response.usage.total_tokens if response.usage else 0
+
+        return response_text, tokens_used
     except:
-        return "Something went wrong. Could you try asking your question again?"
+        return "Something went wrong. Could you try asking your question again?", 0
 
 def handle_message(
     user_id: str,
@@ -207,6 +224,65 @@ def handle_message(
     # Use db_channel_id for database operations, channel_id for logic checks
     if db_channel_id is None:
         db_channel_id = channel_id
+
+    # Admin commands (only in DMs)
+    if channel_id.startswith('D') and is_admin(user_id):
+        text_lower = text.strip().lower()
+
+        # Stats command
+        if text_lower == "stats":
+            stats = get_bot_stats(bot_type)
+            bot_name_display = "Duck" if bot_type == 'duck' else "Goose"
+
+            # Format dates
+            earliest_str = stats['earliest_date'].strftime('%b %d, %Y') if stats['earliest_date'] else "N/A"
+            latest_str = stats['latest_date'].strftime('%b %d, %Y') if stats['latest_date'] else "N/A"
+
+            response_text = f"""*{bot_name_display} Bot Statistics*
+━━━━━━━━━━━━━━━━━━━━━━━━
+*Total tokens used:* {stats['total_tokens']:,}
+*Total messages:* {stats['total_messages']:,}
+*Unique users:* {stats['unique_users']}
+*Date range:* {earliest_str} - {latest_str}"""
+
+            try:
+                slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text=response_text
+                )
+            except:
+                pass
+            return
+
+        # Query command (with optional number)
+        if text_lower.startswith("query"):
+            parts = text_lower.split()
+            limit = 10  # Default
+            if len(parts) > 1 and parts[1].isdigit():
+                limit = int(parts[1])
+
+            queries = get_recent_queries(bot_type, limit)
+
+            if not queries:
+                response_text = f"No queries found for {bot_type.capitalize()} bot."
+            else:
+                response_lines = [f"*Recent Student Queries (Last {len(queries)})*", "━━━━━━━━━━━━━━━━━━━━━━━━"]
+                for timestamp, user_name, message in queries:
+                    time_str = timestamp.strftime('%b %d, %H:%M')
+                    # Truncate long messages
+                    msg_preview = message[:100] + "..." if len(message) > 100 else message
+                    response_lines.append(f"[{time_str}] {user_name}: {msg_preview}")
+
+                response_text = "\n".join(response_lines)
+
+            try:
+                slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text=response_text
+                )
+            except:
+                pass
+            return
 
     # Check for clear command (only in DMs)
     if text.strip().lower() == "clear" and channel_id.startswith('D'):
@@ -255,10 +331,10 @@ def handle_message(
         user_name = f"User_{user_id[-4:]}"
 
     # Get AI response with context (use db_channel_id for database lookup)
-    response = get_bot_response(text, user_id, bot_type, system_prompt, user_name, db_channel_id, thread_ts)
+    response, tokens_used = get_bot_response(text, user_id, bot_type, system_prompt, user_name, db_channel_id, thread_ts)
 
     # Save conversation to database with context (use db_channel_id for storage)
-    save_conversation(user_id, user_name, text, response, bot_type, db_channel_id, thread_ts, message_ts)
+    save_conversation(user_id, user_name, text, response, bot_type, db_channel_id, thread_ts, message_ts, tokens_used)
 
     # Send to Slack (threaded ONLY for channels, not for DMs or group DMs)
     try:
