@@ -95,6 +95,15 @@ def is_admin(user_id: str) -> bool:
     """Check if user is an admin"""
     return user_id in ADMIN_USER_IDS
 
+def format_slack_date(dt):
+    """Convert datetime to Slack's auto-timezone format"""
+    if dt is None:
+        return "N/A"
+    # Convert to Unix timestamp
+    unix_timestamp = int(dt.timestamp())
+    # Slack's date format: automatically shows in user's local timezone
+    return f"<!date^{unix_timestamp}^{{date_short_pretty}} at {{time}}|{dt.strftime('%b %d, %Y %I:%M %p')}>"
+
 def verify_signature(body: bytes, timestamp: str, signature: str, signing_secret: str) -> bool:
     if abs(time.time() - int(timestamp)) > 60 * 5:
         return False
@@ -234,16 +243,20 @@ def handle_message(
             stats = get_bot_stats(bot_type)
             bot_name_display = "Duck" if bot_type == 'duck' else "Goose"
 
-            # Format dates
-            earliest_str = stats['earliest_date'].strftime('%b %d, %Y') if stats['earliest_date'] else "N/A"
-            latest_str = stats['latest_date'].strftime('%b %d, %Y') if stats['latest_date'] else "N/A"
+            # Format dates (Slack auto-timezone format - shows in each user's local timezone)
+            earliest_str = format_slack_date(stats['earliest_date'])
+            latest_str = format_slack_date(stats['latest_date'])
 
             response_text = f"""*{bot_name_display} Bot Statistics*
 ━━━━━━━━━━━━━━━━━━━━━━━━
 *Total tokens used:* {stats['total_tokens']:,}
+*Estimated cost:* ${stats['estimated_cost']:.2f}
 *Total messages:* {stats['total_messages']:,}
-*Unique users:* {stats['unique_users']}
-*Date range:* {earliest_str} - {latest_str}"""
+*Unique students:* {stats['unique_users']}
+*Avg tokens/message:* {stats['avg_tokens']}
+*Avg response length:* {int(stats['avg_response_length'])} chars
+*First message:* {earliest_str}
+*Latest message:* {latest_str}"""
 
             try:
                 slack_client.chat_postMessage(
@@ -261,17 +274,20 @@ def handle_message(
             if len(parts) > 1 and parts[1].isdigit():
                 limit = int(parts[1])
 
-            queries = get_recent_queries(bot_type, limit)
+            # Exclude admin users from query results
+            queries = get_recent_queries(bot_type, limit, exclude_user_ids=ADMIN_USER_IDS)
 
             if not queries:
-                response_text = f"No queries found for {bot_type.capitalize()} bot."
+                response_text = f"No student queries found for {bot_type.capitalize()} bot."
             else:
                 response_lines = [f"*Recent Student Queries (Last {len(queries)})*", "━━━━━━━━━━━━━━━━━━━━━━━━"]
                 for timestamp, user_name, message in queries:
-                    time_str = timestamp.strftime('%b %d, %H:%M')
+                    # Use Slack's auto-timezone formatting (shows in each user's local timezone)
+                    unix_ts = int(timestamp.timestamp())
+                    slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
                     # Truncate long messages
                     msg_preview = message[:100] + "..." if len(message) > 100 else message
-                    response_lines.append(f"[{time_str}] {user_name}: {msg_preview}")
+                    response_lines.append(f"{slack_date} - {user_name}: {msg_preview}")
 
                 response_text = "\n".join(response_lines)
 

@@ -263,7 +263,7 @@ def get_bot_stats(bot_type: str) -> dict:
         bot_type: 'duck' or 'goose'
 
     Returns:
-        Dictionary with total_tokens, total_messages, unique_users, earliest_date, latest_date
+        Dictionary with comprehensive statistics
     """
     db = SessionLocal()
     try:
@@ -284,6 +284,14 @@ def get_bot_stats(bot_type: str) -> dict:
             .filter(Conversation.bot_type == bot_type)\
             .scalar() or 0
 
+        # Average tokens per message
+        avg_tokens = total_tokens / total_messages if total_messages > 0 else 0
+
+        # Average response length (characters)
+        avg_response_length = db.query(sql_func.avg(sql_func.length(Conversation.response)))\
+            .filter(Conversation.bot_type == bot_type)\
+            .scalar() or 0
+
         # Date range
         earliest = db.query(sql_func.min(Conversation.timestamp))\
             .filter(Conversation.bot_type == bot_type)\
@@ -293,23 +301,33 @@ def get_bot_stats(bot_type: str) -> dict:
             .filter(Conversation.bot_type == bot_type)\
             .scalar()
 
+        # Estimated cost (OpenAI GPT-4o pricing: $2.50 per 1M input tokens, $10 per 1M output tokens)
+        # Using rough estimate of 40% input, 60% output
+        input_tokens = total_tokens * 0.4
+        output_tokens = total_tokens * 0.6
+        estimated_cost = (input_tokens / 1_000_000 * 2.50) + (output_tokens / 1_000_000 * 10.00)
+
         return {
             "total_tokens": int(total_tokens),
             "total_messages": total_messages,
             "unique_users": unique_users,
+            "avg_tokens": round(avg_tokens, 1),
+            "avg_response_length": round(avg_response_length, 0),
+            "estimated_cost": round(estimated_cost, 2),
             "earliest_date": earliest,
             "latest_date": latest
         }
     finally:
         db.close()
 
-def get_recent_queries(bot_type: str, limit: int = 10) -> list:
+def get_recent_queries(bot_type: str, limit: int = 10, exclude_user_ids: list = None) -> list:
     """
     Get recent user queries for a specific bot.
 
     Args:
         bot_type: 'duck' or 'goose'
         limit: Number of queries to return (max 100)
+        exclude_user_ids: List of user IDs to exclude (e.g., admins)
 
     Returns:
         List of tuples: (timestamp, user_name, message)
@@ -319,16 +337,22 @@ def get_recent_queries(bot_type: str, limit: int = 10) -> list:
         # Cap limit at 100
         limit = min(limit, 100)
 
-        queries = db.query(
+        query = db.query(
             Conversation.timestamp,
             Conversation.user_name,
             Conversation.message
         )\
-            .filter(Conversation.bot_type == bot_type)\
-            .order_by(Conversation.timestamp.desc())\
+            .filter(Conversation.bot_type == bot_type)
+
+        # Exclude admin user IDs from results
+        if exclude_user_ids:
+            query = query.filter(~Conversation.user_id.in_(exclude_user_ids))
+
+        queries = query.order_by(Conversation.timestamp.desc())\
             .limit(limit)\
             .all()
 
-        return [(q.timestamp, q.user_name, q.message) for q in queries]
+        # Reverse to show oldest first (chronological order)
+        return [(q.timestamp, q.user_name, q.message) for q in reversed(queries)]
     finally:
         db.close()
