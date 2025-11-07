@@ -296,8 +296,11 @@ def handle_message(
                     # Use Slack's auto-timezone formatting (shows in each user's local timezone)
                     unix_ts = int(timestamp.timestamp())
                     slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
-                    # Truncate message
-                    msg_preview = message[:800] + "..." if len(message) > 800 else message
+                    # Collapse multiple newlines and truncate message
+                    msg_preview = message[:800]
+                    msg_preview = '\n'.join(line for line in msg_preview.split('\n') if line.strip())
+                    if len(message) > 800:
+                        msg_preview += "..."
                     response_lines.append(f"*{i}. {user_name}* - {slack_date}")
                     response_lines.append(f"```{msg_preview}```")
                     response_lines.append("")  # Blank line between queries

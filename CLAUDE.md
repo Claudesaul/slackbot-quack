@@ -114,7 +114,7 @@ CREATE TABLE conversations (
   - Specify number: `query 30` shows last 30 queries
   - Maximum: 100 queries (returns error if exceeded)
   - Shows timestamps (auto-converted to user's timezone), usernames, and messages
-  - Messages displayed in code blocks and truncated at 800 characters
+  - Messages displayed in code blocks, truncated at 800 characters, with empty lines removed
   - Excludes admin users from results
   - Displays oldest to newest (chronological order)
   - Bot-specific
