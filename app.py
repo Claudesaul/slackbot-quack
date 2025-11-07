@@ -297,7 +297,7 @@ def handle_message(
                     unix_ts = int(timestamp.timestamp())
                     slack_date = f"<!date^{unix_ts}^{{date_short}} {{time}}|{timestamp.strftime('%b %d, %I:%M %p')}>"
                     # Truncate message
-                    msg_preview = message[:2500] + "..." if len(message) > 2500 else message
+                    msg_preview = message[:800] + "..." if len(message) > 800 else message
                     response_lines.append(f"*{i}. {user_name}* - {slack_date}")
                     response_lines.append(f"```{msg_preview}```")
                     response_lines.append("")  # Blank line between queries
