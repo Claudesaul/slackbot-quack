@@ -702,19 +702,29 @@ railway logs
 > ━━━━━━━━━━━━━━━━━━━━━━━━
 >
 > *1. Alice* - Nov 06 at 9:45 AM
+> ```
 > How do I use for loops?
+> ```
 >
 > *2. Bob* - Nov 06 at 10:23 AM
+> ```
 > What's a dictionary?
+> ```
 >
 > *3. Carol* - Nov 06 at 11:15 AM
+> ```
 > Explain recursion
+> ```
 >
 > *4. David* - Nov 06 at 2:30 PM
+> ```
 > Help with lists
+> ```
 >
 > *5. Eve* - Nov 06 at 5:23 PM
+> ```
 > What are tuples?
+> ```
 
 ---
 
